@@ -2,10 +2,13 @@
   "type": "module",
   "dependencies": {
     "agent-browser": "^0.15.1",
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "js-yaml": "^4.1.1",
+    "playwright": "^1.58.2"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^25.3.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
