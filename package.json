@@ -1,8 +1,5 @@
 {
   "type": "module",
-  "scripts": {
-    "start": "http-server"
-  },
   "dependencies": {
     "agent-browser": "^0.15.1",
     "express": "^5.2.1"
