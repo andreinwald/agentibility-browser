@@ -1,8 +1,9 @@
 import { BrowserManager } from 'agent-browser/dist/browser.js';
+import * as yaml from 'js-yaml';
 
 const browser = new BrowserManager();
 await browser.launch({ action: 'launch', id: 'default', headless: true });
-await browser.getPage().goto('https://github.com/vercel-labs/agent-browser');
+await browser.getPage().goto('https://ai-sdk.dev');
 
 const snapshot = await browser.getSnapshot({});
 
@@ -14,56 +15,73 @@ interface AriaNode {
     text?: string;
 }
 
-function parseAriaTree(treeStr: string): AriaNode[] {
-    const lines = treeStr.split('\n');
-    const rootNodes: AriaNode[] = [];
-    const stack: { indent: number, node: AriaNode }[] = [];
 
-    for (const line of lines) {
-        if (!line.trim() || line.startsWith('#')) continue;
+function parseAriaNodeString(str: string): { role: string; name?: string; attributes: Record<string, string> } {
+    const node: { role: string; name?: string; attributes: Record<string, string> } = {
+        role: '',
+        attributes: {}
+    };
 
-        const indentMatch = line.match(/^(\s*)/);
-        const indent = indentMatch ? Math.floor(indentMatch[1].length / 2) : 0;
-
-        let node: AriaNode = { role: '', attributes: {}, children: [] };
-
-        const match = line.match(/^(\s*-\s*)([\w/]+)(?:\s*"([^"]*)")?(.*)$/);
-
-        if (match) {
-            node.role = match[2];
-            if (match[3]) node.name = match[3];
-
-            const suffix = match[4];
-            if (suffix) {
-                // Parse attributes [key=value]
-                const attrMatches = suffix.matchAll(/\[([^=]+)=([^\]]+)\]/g);
-                for (const m of attrMatches) {
-                    node.attributes[m[1]] = m[2];
-                }
-
-                // If there's text after colon e.g. "text: Some text"
-                const textMatch = suffix.match(/:\s*(.*)/);
-                if (textMatch && !textMatch[1].startsWith('[')) {
-                    node.text = textMatch[1].trim();
-                }
-            }
-        } else {
-            node.text = line.trim().replace(/^- /, '');
-        }
-
-        while (stack.length > 0 && stack[stack.length - 1].indent >= indent) {
-            stack.pop();
-        }
-
-        if (stack.length === 0) {
-            rootNodes.push(node);
-        } else {
-            stack[stack.length - 1].node.children.push(node);
-        }
-
-        stack.push({ indent, node });
+    // Extract role (first word)
+    const firstSpace = str.indexOf(' ');
+    if (firstSpace === -1) {
+        node.role = str;
+        return node;
     }
-    return rootNodes;
+
+    node.role = str.substring(0, firstSpace);
+    let remaining = str.substring(firstSpace + 1).trim();
+
+    // Extract name in quotes
+    if (remaining.startsWith('"')) {
+        const nextQuote = remaining.indexOf('"', 1);
+        if (nextQuote !== -1) {
+            node.name = remaining.substring(1, nextQuote);
+            remaining = remaining.substring(nextQuote + 1).trim();
+        }
+    }
+
+    // Extract attributes [k=v]
+    const attrParts = remaining.split('[');
+    for (const part of attrParts) {
+        if (!part.includes('=')) continue;
+        const [k, v] = part.split(']')[0].split('=');
+        if (k && v) {
+            node.attributes[k.trim()] = v.trim();
+        }
+    }
+
+    return node;
+}
+
+function parseAriaTree(treeStr: string): AriaNode[] {
+    const data = yaml.load(treeStr) as any[];
+    if (!data || !Array.isArray(data)) return [];
+
+    const recurse = (item: any): AriaNode => {
+        if (typeof item === 'string') {
+            const { role, name, attributes } = parseAriaNodeString(item);
+            return { role, name, attributes, children: [] };
+        }
+
+        // It's an object with one key
+        const keys = Object.keys(item);
+        const header = keys[0];
+        const value = item[header];
+        const { role, name, attributes } = parseAriaNodeString(header);
+
+        const node: AriaNode = { role, name, attributes, children: [] };
+
+        if (Array.isArray(value)) {
+            node.children = value.map(recurse);
+        } else if (typeof value === 'string') {
+            node.text = value;
+        }
+
+        return node;
+    };
+
+    return data.map(recurse);
 }
 
 function ariaNodesToHtml(nodes: AriaNode[], indentLevel = 0): string {
@@ -104,6 +122,11 @@ function ariaNodesToHtml(nodes: AriaNode[], indentLevel = 0): string {
 
         if (!isVoid) {
             let inner = '';
+            // If it's a link, use the name as text content if it exists
+            if (node.role === 'link' && node.name) {
+                inner += node.name;
+            }
+
             // Don't render /url as individual sub-elements if handled already
             const validChildren = node.children.filter(c => c.role !== '/url');
 
@@ -118,6 +141,7 @@ function ariaNodesToHtml(nodes: AriaNode[], indentLevel = 0): string {
     }).join('\n');
 }
 
+console.log(snapshot.tree);
 const parsedTree = parseAriaTree(snapshot.tree);
 const html = ariaNodesToHtml(parsedTree);
 
