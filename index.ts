@@ -3,7 +3,7 @@ import * as yaml from 'js-yaml';
 
 const browser = new BrowserManager();
 await browser.launch({ action: 'launch', id: 'default', headless: true });
-await browser.getPage().goto('https://dev.to/devteam/join-the-built-with-google-gemini-writing-challenge-presented-by-major-league-hacking-mlh-win-17pk');
+await browser.getPage().goto('https://vercel.com/login');
 
 
 interface AriaNode {
@@ -129,7 +129,7 @@ function ariaNodesToHtml(nodes: AriaNode[], indentLevel = 0): string {
         if (!isVoid) {
             let inner = '';
             // If it's a link, use the name as text content if it exists
-            if (node.role === 'link' && node.name) {
+            if (['link', 'heading'].includes(node.role) && node.name) {
                 inner += node.name;
             }
 
