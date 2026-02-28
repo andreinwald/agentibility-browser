@@ -3,9 +3,8 @@ import * as yaml from 'js-yaml';
 
 const browser = new BrowserManager();
 await browser.launch({ action: 'launch', id: 'default', headless: true });
-await browser.getPage().goto('https://ai-sdk.dev');
+await browser.getPage().goto('https://dev.to/devteam/join-the-built-with-google-gemini-writing-challenge-presented-by-major-league-hacking-mlh-win-17pk');
 
-const snapshot = await browser.getSnapshot({});
 
 interface AriaNode {
     role: string;
@@ -99,7 +98,14 @@ function ariaNodesToHtml(nodes: AriaNode[], indentLevel = 0): string {
         else if (node.role === 'checkbox') tag = 'input type="checkbox"';
         else if (node.role === 'radio') tag = 'input type="radio"';
 
-        let attrs = `role="${node.role}"`;
+        const validChildren = node.children.filter(c => c.role !== '/url');
+        const hasChildren = validChildren.length > 0;
+        let style = "display: block;";
+        if (validChildren.length > 1) {
+            style += " border: 1px solid #aaa; padding-left: 10px";
+        }
+        let attrs = `role="${node.role}" style="${style}" `;
+
         if (node.name) {
             attrs += ` aria-label="${node.name.replace(/"/g, '&quot;')}"`;
         }
@@ -128,7 +134,6 @@ function ariaNodesToHtml(nodes: AriaNode[], indentLevel = 0): string {
             }
 
             // Don't render /url as individual sub-elements if handled already
-            const validChildren = node.children.filter(c => c.role !== '/url');
 
             if (node.text) inner += node.text;
 
@@ -141,19 +146,19 @@ function ariaNodesToHtml(nodes: AriaNode[], indentLevel = 0): string {
     }).join('\n');
 }
 
-console.log(snapshot.tree);
-const parsedTree = parseAriaTree(snapshot.tree);
-const html = ariaNodesToHtml(parsedTree);
-
 
 import express from 'express';
 const app = express();
 
-app.get('/', (req, res) => {
+app.get('/', async (req, res) => {
+    const snapshot = await browser.getSnapshot({});
+    const parsedTree = parseAriaTree(snapshot.tree);
+    const html = ariaNodesToHtml(parsedTree);
+
     res.send(`<!DOCTYPE html><html><head><title>Snapshot</title></head><body>${html}</body></html>`);
 });
 
-const PORT = 3001;
+const PORT = 3002;
 const server = app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);
 });
