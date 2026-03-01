@@ -68,19 +68,24 @@ function serializeNodeShallow(node: AriaNode): any {
     const key = buildNodeHeader(node);
     const directChildren = node.children.filter((child) => child.role !== '/url');
     const urlChildren = node.children.filter((child) => child.role === '/url');
+    const inlineChildren = directChildren.filter((child) => shouldInlineChild(node.role, child.role));
 
     if (typeof node.text === 'string') {
         return { [key]: node.text };
     }
 
-    if (urlChildren.length > 0) {
+    if (urlChildren.length > 0 && directChildren.length === 0) {
         return { [key]: urlChildren.map((child) => serializeNodeShallow(child)) };
     }
 
     if (directChildren.length > 0) {
-        const inlineChildren = directChildren.filter((child) => shouldInlineChild(node.role, child.role));
         if (inlineChildren.length === directChildren.length) {
-            return { [key]: inlineChildren.map((child) => serializeNodeShallow(child)) };
+            return {
+                [key]: [
+                    ...urlChildren.map((child) => serializeNodeShallow(child)),
+                    ...inlineChildren.map((child) => serializeNodeShallow(child))
+                ]
+            };
         }
 
         const preview = directChildren.slice(0, 5).map((child) => buildNodeHeader(child));
@@ -143,5 +148,13 @@ function toDisplayLeafNode(node: AriaNode): AriaNode {
 }
 
 function shouldInlineChild(parentRole: string, childRole: string): boolean {
-    return parentRole === 'button' && (childRole === 'img' || childRole === 'text');
+    if (parentRole === 'button' && (childRole === 'img' || childRole === 'text')) {
+        return true;
+    }
+
+    if (parentRole === 'link' && (childRole === 'paragraph' || childRole === 'text')) {
+        return true;
+    }
+
+    return false;
 }

@@ -3,12 +3,25 @@ import { type AriaNode } from "./AriaNodeType";
 export function nodesToHtml(nodes: AriaNode[], indentLevel = 0): string {
     const indent = '  '.repeat(indentLevel);
     return nodes.map(node => {
+        if (node.role === 'paragraph' || node.role === 'text') {
+            let content = node.text ?? '';
+            const validChildren = node.children.filter(c => c.role !== '/url');
+            if (validChildren.length > 0) {
+                const childHtml = nodesToHtml(validChildren, indentLevel);
+                if (content && childHtml) {
+                    content += '\n' + childHtml;
+                } else if (childHtml) {
+                    content = childHtml;
+                }
+            }
+            return content;
+        }
+
         let tag = 'div';
         if (node.role === 'link') tag = 'a';
         else if (node.role === 'button') tag = 'button';
         else if (node.role === 'img') tag = 'img';
         else if (node.role === 'heading') tag = node.attributes.level ? `h${node.attributes.level}` : 'h1';
-        else if (node.role === 'paragraph' || node.role === 'text') tag = 'p';
         else if (node.role === 'list') tag = 'ul';
         else if (node.role === 'listitem') tag = 'li';
         else if (node.role === 'textbox' || node.role === 'searchbox') tag = 'input';
@@ -63,7 +76,11 @@ export function nodesToHtml(nodes: AriaNode[], indentLevel = 0): string {
                 && Boolean(node.name)
                 && !node.text
                 && validChildren.length === 0;
-            if ((node.role === 'heading' || shouldRenderLinkName) && node.name) {
+            const shouldRenderButtonName = node.role === 'button'
+                && Boolean(node.name)
+                && !node.text
+                && validChildren.length === 0;
+            if ((node.role === 'heading' || shouldRenderLinkName || shouldRenderButtonName) && node.name) {
                 inner += node.name;
             }
 
