@@ -1,6 +1,37 @@
 import { type AriaNode } from "./AriaNodeType";
 import * as yaml from 'js-yaml';
 
+
+export function yamlToNodes(treeStr: string): AriaNode[] {
+    const data = yaml.load(treeStr) as any[];
+    if (!data || !Array.isArray(data)) return [];
+
+    const recurse = (item: any): AriaNode => {
+        if (typeof item === 'string') {
+            const { role, name, attributes } = parseAriaNodeString(item);
+            return { role, name, attributes, children: [] };
+        }
+
+        // It's an object with one key
+        const keys = Object.keys(item);
+        const header = keys[0];
+        const value = item[header];
+        const { role, name, attributes } = parseAriaNodeString(header);
+
+        const node: AriaNode = { role, name, attributes, children: [] };
+
+        if (Array.isArray(value)) {
+            node.children = value.map(recurse);
+        } else if (typeof value === 'string') {
+            node.text = value;
+        }
+
+        return node;
+    };
+
+    return data.map(recurse);
+}
+
 function parseAriaNodeString(str: string): { role: string; name?: string; attributes: Record<string, string> } {
     const node: { role: string; name?: string; attributes: Record<string, string> } = {
         role: '',
@@ -37,34 +68,4 @@ function parseAriaNodeString(str: string): { role: string; name?: string; attrib
     }
 
     return node;
-}
-
-export function parseAriaYaml(treeStr: string): AriaNode[] {
-    const data = yaml.load(treeStr) as any[];
-    if (!data || !Array.isArray(data)) return [];
-
-    const recurse = (item: any): AriaNode => {
-        if (typeof item === 'string') {
-            const { role, name, attributes } = parseAriaNodeString(item);
-            return { role, name, attributes, children: [] };
-        }
-
-        // It's an object with one key
-        const keys = Object.keys(item);
-        const header = keys[0];
-        const value = item[header];
-        const { role, name, attributes } = parseAriaNodeString(header);
-
-        const node: AriaNode = { role, name, attributes, children: [] };
-
-        if (Array.isArray(value)) {
-            node.children = value.map(recurse);
-        } else if (typeof value === 'string') {
-            node.text = value;
-        }
-
-        return node;
-    };
-
-    return data.map(recurse);
 }

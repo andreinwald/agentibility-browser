@@ -1,6 +1,6 @@
 import { type AriaNode } from "./AriaNodeType";
 
-export function ariaNodesToHtml(nodes: AriaNode[], indentLevel = 0): string {
+export function nodesToHtml(nodes: AriaNode[], indentLevel = 0): string {
     const indent = '  '.repeat(indentLevel);
     return nodes.map(node => {
         let tag = 'div';
@@ -54,7 +54,7 @@ export function ariaNodesToHtml(nodes: AriaNode[], indentLevel = 0): string {
             if (node.text) inner += node.text;
 
             if (validChildren.length > 0) {
-                inner += '\n' + ariaNodesToHtml(validChildren, indentLevel + 1) + `\n${indent}`;
+                inner += '\n' + nodesToHtml(validChildren, indentLevel + 1) + `\n${indent}`;
             }
             html += `${inner}</${tag.split(' ')[0]}>`;
         }

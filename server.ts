@@ -5,8 +5,8 @@ await browser.launch({ action: 'launch', id: 'default', headless: true });
 
 
 import express from 'express';
-import { ariaNodesToHtml } from './src/AriaToHtml';
-import { parseAriaYaml } from './src/ParseAriaYaml';
+import { ariaNodesToHtml } from './src/AriaToHtml/NodesToHtml';
+import { parseAriaYaml } from './src/AriaToHtml/NodesToHtml';
 const app = express();
 
 app.get('/', async (req, res) => {
