@@ -1,5 +1,5 @@
-import { nodesToHtml } from './NodesToHtml';
-import { yamlToNodes } from './YamlToNodes';
+import { nodesToHtml } from './NodesToHtml.js';
+import { yamlToNodes } from './YamlToNodes.js';
 
 
 export function ariaToHtml(ariaYaml: string): string[] {

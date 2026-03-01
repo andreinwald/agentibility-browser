@@ -1,4 +1,4 @@
-import { type AriaNode } from "./AriaNodeType";
+import { type AriaNode } from "./AriaNodeType.js";
 import * as yaml from 'js-yaml';
 
 

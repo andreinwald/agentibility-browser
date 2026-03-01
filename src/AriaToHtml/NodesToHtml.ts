@@ -1,4 +1,4 @@
-import { type AriaNode } from "./AriaNodeType";
+import { type AriaNode } from "./AriaNodeType.js";
 
 export function nodesToHtml(nodes: AriaNode[], indentLevel = 0, parentNode?: AriaNode): string {
     const indent = '  '.repeat(indentLevel);

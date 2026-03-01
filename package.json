@@ -1,19 +1,21 @@
 {
   "type": "module",
+  "main": "dist/electron/main.js",
   "scripts": {
-    "web-server": "tsx --watch web-server.ts"
+    "build": "tsc -p tsconfig.json",
+    "start": "npm run build && electron .",
+    "dev": "npm run start",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "agent-browser": "^0.15.1",
-    "express": "^5.2.1",
     "js-yaml": "^4.1.1",
     "playwright": "^1.58.2"
   },
   "devDependencies": {
-    "@types/express": "^5.0.6",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^25.3.2",
-    "tsx": "^4.20.7",
+    "electron": "^37.4.0",
     "typescript": "^5.9.3"
   }
 }
