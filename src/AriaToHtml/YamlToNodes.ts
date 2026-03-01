@@ -38,34 +38,68 @@ function parseAriaNodeString(str: string): { role: string; name?: string; attrib
         attributes: {}
     };
 
-    // Extract role (first word)
-    const firstSpace = str.indexOf(' ');
+    const trimmed = str.trim();
+    const firstSpace = trimmed.indexOf(' ');
     if (firstSpace === -1) {
-        node.role = str;
+        node.role = trimmed;
         return node;
     }
 
-    node.role = str.substring(0, firstSpace);
-    let remaining = str.substring(firstSpace + 1).trim();
+    node.role = trimmed.substring(0, firstSpace);
+    let remaining = trimmed.substring(firstSpace + 1).trim();
 
-    // Extract name in quotes
+    // Extract name in quotes with support for escaped quotes.
     if (remaining.startsWith('"')) {
-        const nextQuote = remaining.indexOf('"', 1);
-        if (nextQuote !== -1) {
-            node.name = remaining.substring(1, nextQuote);
-            remaining = remaining.substring(nextQuote + 1).trim();
+        const parsed = readQuoted(remaining);
+        if (parsed) {
+            node.name = parsed.value;
+            remaining = parsed.remaining;
         }
     }
 
-    // Extract attributes [k=v]
-    const attrParts = remaining.split('[');
-    for (const part of attrParts) {
-        if (!part.includes('=')) continue;
-        const [k, v] = part.split(']')[0].split('=');
-        if (k && v) {
-            node.attributes[k.trim()] = v.trim();
+    // Extract attributes [k=v] and valueless flags [selected].
+    const attrPattern = /\[([^\]]+)\]/g;
+    let match: RegExpExecArray | null;
+    while ((match = attrPattern.exec(remaining)) !== null) {
+        const raw = match[1].trim();
+        if (!raw) continue;
+        const separator = raw.indexOf('=');
+        if (separator === -1) {
+            node.attributes[raw] = 'true';
+            continue;
         }
+
+        const key = raw.substring(0, separator).trim();
+        const value = raw.substring(separator + 1).trim();
+        if (!key) continue;
+        node.attributes[key] = value;
     }
 
     return node;
+}
+
+function readQuoted(input: string): { value: string; remaining: string } | null {
+    if (!input.startsWith('"')) return null;
+
+    let escaped = false;
+    let out = '';
+    for (let i = 1; i < input.length; i += 1) {
+        const ch = input[i];
+        if (escaped) {
+            out += ch;
+            escaped = false;
+            continue;
+        }
+        if (ch === '\\') {
+            escaped = true;
+            continue;
+        }
+        if (ch === '"') {
+            const remaining = input.substring(i + 1).trim();
+            return { value: out, remaining };
+        }
+        out += ch;
+    }
+
+    return null;
 }

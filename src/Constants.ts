@@ -1,1 +1,1 @@
-export const URL = 'https://vercel.com/login';
+export const URL = 'https://github.com/andreinwald/webmcp-demo';

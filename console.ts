@@ -13,8 +13,7 @@ console.log('-------  ARIA YAML -------');
 console.log(ariaYaml);
 
 const htmlPieces = ariaToHtml(ariaYaml);
-const wrappedHtmlPieces = htmlPieces.map((piece) => `<div>${piece}</div>`);
 console.log('-------  HTML pieces -------');
-console.log(wrappedHtmlPieces.join('\n\n'));
+console.log(htmlPieces.join('\n\n'));
 
 await browser.close();
