@@ -4,7 +4,6 @@ const browser = new BrowserManager();
 
 import express from 'express';
 import { ariaToHtml } from './src/AriaToHtml/AriaToHtml';
-import { URL } from './src/Constants.js';
 
 const app = express();
 const SHADCN_TAILWIND_CONFIG = `
@@ -37,6 +36,10 @@ const SHADCN_TAILWIND_CONFIG = `
                         card: {
                             DEFAULT: 'hsl(var(--card))',
                             foreground: 'hsl(var(--card-foreground))'
+                        },
+                        destructive: {
+                            DEFAULT: 'hsl(var(--destructive))',
+                            foreground: 'hsl(var(--destructive-foreground))'
                         }
                     },
                     borderRadius: {
@@ -64,6 +67,8 @@ const SHADCN_THEME_CSS = `
         --muted-foreground: 215.4 16.3% 46.9%;
         --accent: 210 40% 96.1%;
         --accent-foreground: 222.2 47.4% 11.2%;
+        --destructive: 0 84.2% 60.2%;
+        --destructive-foreground: 210 40% 98%;
         --border: 214.3 31.8% 91.4%;
         --input: 214.3 31.8% 91.4%;
         --ring: 222.2 84% 4.9%;
@@ -120,15 +125,76 @@ const PREVIEW_CSS = `
     }
 `;
 
+function normalizeRequestedUrl(raw: string): string | undefined {
+    const trimmed = raw.trim();
+    if (!trimmed) return undefined;
+
+    let candidate = trimmed;
+    if (!/^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(candidate)) {
+        candidate = `https://${candidate}`;
+    }
+
+    try {
+        const parsed = new URL(candidate);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return undefined;
+        return parsed.toString();
+    } catch {
+        return undefined;
+    }
+}
+
+function escapeHtml(input: string): string {
+    return input
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+function escapeAttr(input: string): string {
+    return escapeHtml(input).replace(/"/g, '&quot;');
+}
+
 app.get('/', async (req, res) => {
-    await browser.launch({ action: 'launch', id: 'default', headless: true });
-    await browser.getPage().goto(URL);
-    const snapshot = await browser.getSnapshot({});
-    console.log('---------------------------------------')
-    console.log(snapshot.tree)
-    const htmlPieces = ariaToHtml(snapshot.tree);
-    res.send(`<!DOCTYPE html><html><head><title>Snapshot</title>${SHADCN_TAILWIND_CONFIG}<script src="https://cdn.tailwindcss.com"></script><style>${SHADCN_THEME_CSS}${PREVIEW_CSS}</style></head><body class="bg-background text-foreground antialiased">${htmlPieces.join('\n')}</body></html>`);
-    await browser.close();
+    const rawUrl = typeof req.query.url === 'string' ? req.query.url : '';
+    const targetUrl = normalizeRequestedUrl(rawUrl);
+
+    let htmlPieces: string[] = [];
+    let statusMessage = 'Enter a URL and press Go.';
+    let errorMessage = '';
+    let launched = false;
+
+    if (rawUrl && !targetUrl) {
+        errorMessage = 'Invalid URL. Use http:// or https:// (or enter a hostname).';
+    }
+
+    if (targetUrl) {
+        try {
+            await browser.launch({ action: 'launch', id: 'default', headless: true });
+            launched = true;
+            await browser.getPage().goto(targetUrl, { waitUntil: 'networkidle' });
+            const snapshot = await browser.getSnapshot({});
+            console.log('---------------------------------------')
+            console.log(snapshot.tree)
+            htmlPieces = ariaToHtml(snapshot.tree);
+            statusMessage = `Viewing ${targetUrl}`;
+        } catch (error) {
+            errorMessage = error instanceof Error ? error.message : String(error);
+            statusMessage = `Failed to load ${targetUrl}`;
+        } finally {
+            if (launched) {
+                await browser.close();
+            }
+        }
+    }
+
+    const formValue = escapeAttr(rawUrl || '');
+    const status = escapeHtml(statusMessage);
+    const error = escapeHtml(errorMessage);
+    const content = htmlPieces.length > 0
+        ? htmlPieces.join('\n')
+        : '<div class="mx-auto mt-8 w-full max-w-6xl rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">No snapshot yet.</div>';
+
+    res.send(`<!DOCTYPE html><html><head><title>Snapshot Browser</title>${SHADCN_TAILWIND_CONFIG}<script src="https://cdn.tailwindcss.com"></script><style>${SHADCN_THEME_CSS}${PREVIEW_CSS}</style></head><body class="bg-background text-foreground antialiased"><header class="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur"><form method="GET" action="/" class="mx-auto flex w-full max-w-6xl items-center gap-2 p-3"><div class="text-xs font-medium text-muted-foreground">mini-browser</div><input name="url" type="text" placeholder="https://example.com" value="${formValue}" class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm" /><button type="submit" class="inline-flex h-9 items-center justify-center rounded-md border border-input bg-background px-4 text-sm font-medium shadow-sm hover:bg-accent hover:text-accent-foreground">Go</button></form><div class="mx-auto w-full max-w-6xl px-3 pb-2 text-xs text-muted-foreground">${status}</div>${errorMessage ? `<div class="mx-auto mb-2 w-full max-w-6xl rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-xs text-destructive">${error}</div>` : ''}</header>${content}</body></html>`);
 });
 
 const PORT = 3003;

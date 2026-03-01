@@ -1,8 +1,7 @@
 {
   "type": "module",
   "scripts": {
-    "web-server": "tsx --watch web-server.ts",
-    "console": "tsx console.ts"
+    "web-server": "tsx --watch web-server.ts"
   },
   "dependencies": {
     "agent-browser": "^0.15.1",
