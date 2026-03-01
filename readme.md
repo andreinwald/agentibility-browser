@@ -1,7 +1,7 @@
 # Agent-first Browser (Electron)
 Desktop app that renders web pages as an agent-first accessibility snapshot.
 
-[app screenshot](./screenshot.png)
+<img src="./app_screenshot.png" alt="app screenshot" style="height: 500px" />
 
 ## Local setup (macOS)
 
