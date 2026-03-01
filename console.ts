@@ -12,8 +12,9 @@ const ariaYaml = snapshot.tree;
 console.log('-------  ARIA YAML -------');
 console.log(ariaYaml);
 
-const html = ariaToHtml(ariaYaml);
-console.log('-------  HTML visualization -------');
-console.log(html);
+const htmlPieces = ariaToHtml(ariaYaml);
+const wrappedHtmlPieces = htmlPieces.map((piece) => `<div>${piece}</div>`);
+console.log('-------  HTML pieces -------');
+console.log(wrappedHtmlPieces.join('\n\n'));
 
 await browser.close();

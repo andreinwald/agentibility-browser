@@ -14,8 +14,9 @@ app.get('/', async (req, res) => {
     const snapshot = await browser.getSnapshot({});
     console.log('---------------------------------------')
     console.log(snapshot.tree)
-    const html = ariaToHtml(snapshot.tree);
-    res.send(`<!DOCTYPE html><html><head><title>Snapshot</title></head><body>${html}</body></html>`);
+    const htmlPieces = ariaToHtml(snapshot.tree);
+    const wrappedHtmlPieces = htmlPieces.map((piece) => `<div>${piece}</div>`);
+    res.send(`<!DOCTYPE html><html><head><title>Snapshot</title></head><body>${wrappedHtmlPieces.join('\n')}</body></html>`);
     await browser.close();
 });
 
@@ -23,4 +24,3 @@ const PORT = 3003;
 app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);
 });
-
