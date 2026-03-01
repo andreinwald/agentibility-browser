@@ -11,13 +11,16 @@ export function ariaToHtml(ariaYaml: string): string {
     const rows = significantNodes.map((node) => {
         const yamlSnippet = escapeHtml(nodeToYamlShallow(node));
         const htmlSnippet = nodeToHtmlShallow(node);
+        if (htmlSnippet.trim().length === 0) {
+            return '';
+        }
         const htmlCodeSnippet = escapeHtml(htmlSnippet);
         return `<tr>
   <td style="vertical-align: top; border: 1px solid #ddd; padding: 8px;"><pre style="margin: 0; white-space: pre-wrap;">${yamlSnippet}</pre></td>
   <td style="vertical-align: top; border: 1px solid #ddd; padding: 8px;"><pre style="margin: 0; white-space: pre-wrap;">${htmlCodeSnippet}</pre></td>
   <td style="vertical-align: top; border: 1px solid #ddd; padding: 8px;">${htmlSnippet}</td>
 </tr>`;
-    }).join('\n');
+    }).filter(Boolean).join('\n');
 
     return `<table style="width: 100%; border-collapse: collapse; font-family: monospace;">
   <thead>
@@ -36,12 +39,16 @@ ${rows}
 function flattenSignificantNodes(nodes: AriaNode[]): AriaNode[] {
     const flattened: AriaNode[] = [];
 
-    const visit = (node: AriaNode) => {
+    const visit = (node: AriaNode, parentRole?: string) => {
+        if (parentRole && shouldInlineChild(parentRole, node.role)) {
+            return;
+        }
+
         if (node.role !== '/url') {
             flattened.push(node);
         }
         for (const child of node.children) {
-            visit(child);
+            visit(child, node.role);
         }
     };
 
@@ -71,6 +78,11 @@ function serializeNodeShallow(node: AriaNode): any {
     }
 
     if (directChildren.length > 0) {
+        const inlineChildren = directChildren.filter((child) => shouldInlineChild(node.role, child.role));
+        if (inlineChildren.length === directChildren.length) {
+            return { [key]: inlineChildren.map((child) => serializeNodeShallow(child)) };
+        }
+
         const preview = directChildren.slice(0, 5).map((child) => buildNodeHeader(child));
         if (directChildren.length > preview.length) {
             preview.push(`... (${directChildren.length - preview.length} more children)`);
@@ -104,8 +116,8 @@ function escapeHtml(value: string): string {
 
 function nodeToHtmlShallow(node: AriaNode): string {
     const urlChildren = node.children.filter((child) => child.role === '/url');
-    const directChildren = node.children
-        .filter((child) => child.role !== '/url')
+    const inlineChildren = node.children
+        .filter((child) => shouldInlineChild(node.role, child.role))
         .map(toDisplayLeafNode);
 
     const clone: AriaNode = {
@@ -113,7 +125,8 @@ function nodeToHtmlShallow(node: AriaNode): string {
         name: node.name,
         attributes: { ...node.attributes },
         text: node.text,
-        children: [...urlChildren, ...directChildren]
+        // Keep URL children and inline children so this row can represent one logical unit.
+        children: [...urlChildren, ...inlineChildren]
     };
 
     return nodesToHtml([clone]);
@@ -125,7 +138,10 @@ function toDisplayLeafNode(node: AriaNode): AriaNode {
         name: node.name,
         attributes: { ...node.attributes },
         text: node.text,
-        // Keep URL children so links still render with href.
         children: node.children.filter((child) => child.role === '/url')
     };
+}
+
+function shouldInlineChild(parentRole: string, childRole: string): boolean {
+    return parentRole === 'button' && (childRole === 'img' || childRole === 'text');
 }

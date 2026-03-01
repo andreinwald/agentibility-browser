@@ -4,13 +4,16 @@ const browser = new BrowserManager();
 
 import express from 'express';
 import { ariaToHtml } from './src/AriaToHtml/AriaToHtml';
+import { URL } from './src/Constants.js';
 
 const app = express();
 
 app.get('/', async (req, res) => {
     await browser.launch({ action: 'launch', id: 'default', headless: true });
-    await browser.getPage().goto('https://vercel.com/login');
+    await browser.getPage().goto(URL);
     const snapshot = await browser.getSnapshot({});
+    console.log('---------------------------------------')
+    console.log(snapshot.tree)
     const html = ariaToHtml(snapshot.tree);
     res.send(`<!DOCTYPE html><html><head><title>Snapshot</title></head><body>${html}</body></html>`);
     await browser.close();
