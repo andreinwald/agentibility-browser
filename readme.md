@@ -7,6 +7,6 @@ Desktop app similar to Google Chrome that renders web pages into text format (AR
 ```bash
 npm install
 npx playwright install chromium
-npm start
+npm start # opens Electron app
 # Enter a URL and press `Go` to load the snapshot view.
 ```
