@@ -1,7 +1,7 @@
 {
   "type": "module",
   "scripts": {
-    "web-server": "tsx web-server.ts",
+    "web-server": "tsx --watch web-server.ts",
     "console": "tsx console.ts"
   },
   "dependencies": {

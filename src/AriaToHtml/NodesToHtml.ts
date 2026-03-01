@@ -20,11 +20,13 @@ export function nodesToHtml(nodes: AriaNode[], indentLevel = 0): string {
         if (validChildren.length > 1) {
             style += " border: 1px solid #aaa; padding-left: 10px";
         }
-        let attrs = `role="${node.role}" style="${style}" `;
+        let attrs = ``;
+        if (style) attrs += `style="${style}" `;
+        // if (node.role) attrs += `role="${node.role}" `;
 
-        if (node.name) {
-            attrs += ` aria-label="${node.name.replace(/"/g, '&quot;')}"`;
-        }
+        // if (node.name) {
+        //     attrs += ` aria-label="${node.name.replace(/"/g, '&quot;')}"`;
+        // }
 
         // Handle /url child nodes for links
         if (node.role === 'link' && node.children.some(c => c.role === '/url')) {

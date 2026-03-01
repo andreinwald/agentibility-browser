@@ -103,28 +103,29 @@ function escapeHtml(value: string): string {
 }
 
 function nodeToHtmlShallow(node: AriaNode): string {
-    const directChildren = node.children.filter((child) => child.role !== '/url');
-    const childPreview = summarizeChildren(directChildren, 3);
+    const urlChildren = node.children.filter((child) => child.role === '/url');
+    const directChildren = node.children
+        .filter((child) => child.role !== '/url')
+        .map(toDisplayLeafNode);
 
     const clone: AriaNode = {
         role: node.role,
         name: node.name,
         attributes: { ...node.attributes },
-        text: node.text ?? ((directChildren.length > 0 && isContainerLike(node.role)) ? `[children: ${childPreview}]` : undefined),
-        children: node.children.filter((child) => child.role === '/url')
+        text: node.text,
+        children: [...urlChildren, ...directChildren]
     };
 
     return nodesToHtml([clone]);
 }
 
-function summarizeChildren(children: AriaNode[], maxItems: number): string {
-    const headers = children.slice(0, maxItems).map((child) => buildNodeHeader(child));
-    if (children.length > headers.length) {
-        headers.push(`... +${children.length - headers.length}`);
-    }
-    return headers.join(', ');
-}
-
-function isContainerLike(role: string): boolean {
-    return !['img', 'textbox', 'searchbox', 'checkbox', 'radio', 'link', 'heading', 'text'].includes(role);
+function toDisplayLeafNode(node: AriaNode): AriaNode {
+    return {
+        role: node.role,
+        name: node.name,
+        attributes: { ...node.attributes },
+        text: node.text,
+        // Keep URL children so links still render with href.
+        children: node.children.filter((child) => child.role === '/url')
+    };
 }
