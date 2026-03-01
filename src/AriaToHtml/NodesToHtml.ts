@@ -16,12 +16,7 @@ export function nodesToHtml(nodes: AriaNode[], indentLevel = 0): string {
         else if (node.role === 'radio') tag = 'input type="radio"';
 
         const validChildren = node.children.filter(c => c.role !== '/url');
-        let style = "display: block;";
-        if (validChildren.length > 1) {
-            style += " border: 1px solid #aaa; padding-left: 10px";
-        }
         let attrs = ``;
-        if (style) attrs += `style="${style}" `;
         // if (node.role) attrs += `role="${node.role}" `;
 
         // if (node.name) {
@@ -36,18 +31,39 @@ export function nodesToHtml(nodes: AriaNode[], indentLevel = 0): string {
             }
         }
 
+        // Preserve accessible name for images as alt text.
+        if (node.role === 'img' && node.name) {
+            attrs += ` alt="${node.name.replace(/"/g, '&quot;')}"`;
+        }
+
         for (const [k, v] of Object.entries(node.attributes)) {
             if (k === 'level' && node.role === 'heading') continue; // Handled in tag
             attrs += ` data-${k}="${v.replace(/"/g, '&quot;')}"`;
         }
 
-        const isVoid = ['img', 'input'].includes(tag.split(' ')[0]);
-        let html = `${indent}<${tag} ${attrs}${isVoid ? ' />' : '>'}`;
+        const tagName = tag.split(' ')[0];
+        const isVoid = ['img', 'input'].includes(tagName);
+        const renderedChildren = validChildren.length > 0 ? nodesToHtml(validChildren, indentLevel + 1) : '';
+        const hasValue = Boolean((node.name && node.name.trim()) || (node.text && node.text.trim()));
+        const hasAttributes = attrs.trim().length > 0;
+        const hasChildren = renderedChildren.trim().length > 0;
+
+        // Drop visual noise placeholders.
+        if ((tagName === 'div' || tagName === 'img') && !hasAttributes && !hasValue && !hasChildren) {
+            return '';
+        }
+
+        let html = `${indent}<${tag}${attrs}${isVoid ? ' />' : '>'}`;
 
         if (!isVoid) {
             let inner = '';
-            // If it's a link, use the name as text content if it exists
-            if (['link', 'heading'].includes(node.role) && node.name) {
+            // For headings, use name as visible text.
+            // For links, only fallback to name when there is no explicit content.
+            const shouldRenderLinkName = node.role === 'link'
+                && Boolean(node.name)
+                && !node.text
+                && validChildren.length === 0;
+            if ((node.role === 'heading' || shouldRenderLinkName) && node.name) {
                 inner += node.name;
             }
 
@@ -55,11 +71,11 @@ export function nodesToHtml(nodes: AriaNode[], indentLevel = 0): string {
 
             if (node.text) inner += node.text;
 
-            if (validChildren.length > 0) {
-                inner += '\n' + nodesToHtml(validChildren, indentLevel + 1) + `\n${indent}`;
+            if (hasChildren) {
+                inner += '\n' + renderedChildren + `\n${indent}`;
             }
             html += `${inner}</${tag.split(' ')[0]}>`;
         }
         return html;
-    }).join('\n');
+    }).filter(Boolean).join('\n');
 }
