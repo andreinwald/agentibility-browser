@@ -1,8 +1,8 @@
 {
   "type": "module",
   "scripts": {
-    "web-server": "tsx --no-cache server.ts",
-    "console": "tsx --no-cache console.ts"
+    "web-server": "tsx web-server.ts",
+    "console": "tsx console.ts"
   },
   "dependencies": {
     "agent-browser": "^0.15.1",
