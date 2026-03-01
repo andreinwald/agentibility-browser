@@ -173,8 +173,6 @@ app.get('/', async (req, res) => {
             launched = true;
             await browser.getPage().goto(targetUrl, { waitUntil: 'networkidle' });
             const snapshot = await browser.getSnapshot({});
-            console.log('---------------------------------------')
-            console.log(snapshot.tree)
             htmlPieces = ariaToHtml(snapshot.tree);
             statusMessage = `Viewing ${targetUrl}`;
         } catch (error) {
