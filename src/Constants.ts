@@ -1,1 +1,0 @@
-export const URL = 'https://github.com/andreinwald/webmcp-demo';

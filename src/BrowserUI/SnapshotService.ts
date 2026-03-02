@@ -1,5 +1,5 @@
 import { BrowserManager } from 'agent-browser/dist/browser.js';
-import { ariaToHtml } from './AriaToHtml/AriaToHtml.js';
+import { ariaToHtml } from '../AriaToHtml/AriaToHtml.js';
 
 export type SnapshotResponse = {
     rawUrl: string;
