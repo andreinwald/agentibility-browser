@@ -37,6 +37,8 @@
     "files": [
       "dist/**/*",
       "src/electron/index.html",
+      "src/electron/renderer.css",
+      "src/electron/tailwind-config.js",
       "src/electron/preload.cjs"
     ],
     "mac": {

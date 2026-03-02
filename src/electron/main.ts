@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import path from 'node:path';
-import { loadSnapshot } from '../BrowserUI/SnapshotService.js';
+import { loadSnapshot } from './SnapshotService.js';
 
 const rendererHtmlPath = path.join(app.getAppPath(), 'src', 'electron', 'index.html');
 const preloadScriptPath = path.join(app.getAppPath(), 'src', 'electron', 'preload.cjs');
