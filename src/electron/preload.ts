@@ -1,5 +1,5 @@
+import type { ExecuteMcpRequest, SnapshotApi } from './shared/snapshot.js';
 import { contextBridge, ipcRenderer } from 'electron';
-import type { SnapshotApi } from './shared/snapshot.js';
 
 const snapshotApi: SnapshotApi = {
     loadSnapshot: (url: string, sessionId?: string) => {
@@ -10,6 +10,9 @@ const snapshotApi: SnapshotApi = {
     },
     closeSession: (sessionId: string) => {
         return ipcRenderer.invoke('snapshot:close-session', { sessionId });
+    },
+    executeMcpCommand: (request: ExecuteMcpRequest) => {
+        return ipcRenderer.invoke('snapshot:execute-mcp', request);
     }
 };
 

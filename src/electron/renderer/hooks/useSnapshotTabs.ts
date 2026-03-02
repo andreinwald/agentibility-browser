@@ -1,4 +1,4 @@
-import type { SnapshotResponse } from '../../shared/snapshot.js';
+import type { McpCommand, SnapshotResponse } from '../../shared/snapshot.js';
 import { applySystemThemePreference } from '../lib/theme.js';
 import { applyEntryToTab, createEmptyTab, getCurrentEntry, upsertHistoryEntry } from '../lib/tabState.js';
 import type { LoadMode, Tab } from '../types.js';
@@ -18,7 +18,26 @@ type SnapshotTabsController = {
     goBack: () => void;
     goForward: () => void;
     reloadCurrent: () => void;
+    executeMcpCommand: (command: McpCommand) => Promise<void>;
 };
+
+function getEntryUrl(entry: SnapshotResponse | null): string {
+    return entry?.targetUrl || entry?.rawUrl || '';
+}
+
+function shouldCreateHistoryEntryForCommand(command: McpCommand, previousEntry: SnapshotResponse | null, response: SnapshotResponse): boolean {
+    if (command.action === 'open') {
+        return true;
+    }
+
+    const previousUrl = getEntryUrl(previousEntry);
+    const nextUrl = getEntryUrl(response);
+    if (!previousUrl || !nextUrl) {
+        return false;
+    }
+
+    return previousUrl !== nextUrl;
+}
 
 export function useSnapshotTabs(): SnapshotTabsController {
     const [tabs, setTabs] = React.useState<Tab[]>([]);
@@ -85,7 +104,8 @@ export function useSnapshotTabs(): SnapshotTabsController {
                 const completedTab: Tab = {
                     ...candidate,
                     loading: false,
-                    refreshing: false
+                    refreshing: false,
+                    commandHistory: response.commandHistory
                 };
 
                 return upsertHistoryEntry(completedTab, response, mode);
@@ -102,7 +122,9 @@ export function useSnapshotTabs(): SnapshotTabsController {
                         rawUrl,
                         statusMessage: 'Failed to load snapshot.',
                         errorMessage: message,
-                        htmlPieces: []
+                        htmlPieces: [],
+                        refs: {},
+                        commandHistory: candidate.commandHistory
                     };
 
                     const completedTab: Tab = {
@@ -119,6 +141,68 @@ export function useSnapshotTabs(): SnapshotTabsController {
                     loading: false,
                     refreshing: false,
                     statusMessage: 'Failed to refresh snapshot.',
+                    errorMessage: message
+                };
+            }));
+        }
+    }, [getTabById]);
+
+    const executeMcpCommandForTab = React.useCallback(async (tabId: number, command: McpCommand): Promise<void> => {
+        const tab = getTabById(tabId);
+        if (!tab?.sessionId) return;
+
+        const previousEntry = getCurrentEntry(tab);
+        const requestToken = tab.requestToken + 1;
+
+        setTabs((previousTabs) => previousTabs.map((candidate) => {
+            if (candidate.id !== tabId) return candidate;
+
+            return {
+                ...candidate,
+                requestToken,
+                loading: false,
+                refreshing: true,
+                errorMessage: ''
+            };
+        }));
+
+        try {
+            if (!window.snapshotApi) {
+                throw new Error('Snapshot API bridge is unavailable. Restart the app.');
+            }
+
+            const response = await window.snapshotApi.executeMcpCommand({
+                sessionId: tab.sessionId,
+                command
+            });
+
+            const mode: LoadMode = shouldCreateHistoryEntryForCommand(command, previousEntry, response)
+                ? 'navigate'
+                : 'refresh';
+
+            setTabs((previousTabs) => previousTabs.map((candidate) => {
+                if (candidate.id !== tabId || candidate.requestToken !== requestToken) return candidate;
+
+                const completedTab: Tab = {
+                    ...candidate,
+                    loading: false,
+                    refreshing: false,
+                    commandHistory: response.commandHistory
+                };
+
+                return upsertHistoryEntry(completedTab, response, mode);
+            }));
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+
+            setTabs((previousTabs) => previousTabs.map((candidate) => {
+                if (candidate.id !== tabId || candidate.requestToken !== requestToken) return candidate;
+
+                return {
+                    ...candidate,
+                    loading: false,
+                    refreshing: false,
+                    statusMessage: 'Failed to execute MCP command.',
                     errorMessage: message
                 };
             }));
@@ -217,7 +301,7 @@ export function useSnapshotTabs(): SnapshotTabsController {
     }, [tabs, activeTabId]);
 
     const activeEntry = getCurrentEntry(activeTab);
-    const isLoading = Boolean(activeTab?.loading);
+    const isLoading = Boolean(activeTab?.loading || activeTab?.refreshing);
 
     const submitActiveTab = React.useCallback((event: React.FormEvent<HTMLFormElement>): void => {
         event.preventDefault();
@@ -270,14 +354,17 @@ export function useSnapshotTabs(): SnapshotTabsController {
 
     const reloadCurrent = React.useCallback((): void => {
         const tab = tabsRef.current.find((candidate) => candidate.id === activeTabIdRef.current);
-        if (!tab || tab.loading || tab.refreshing) return;
+        if (!tab || tab.loading || tab.refreshing || !tab.sessionId) return;
 
-        const entry = getCurrentEntry(tab);
-        const urlToReload = entry?.targetUrl || entry?.rawUrl || tab.inputValue || '';
-        if (!urlToReload.trim()) return;
-
-        void loadSnapshotForTab(tab.id, urlToReload, 'navigate');
+        void loadSnapshotForTab(tab.id, '', 'refresh');
     }, [loadSnapshotForTab]);
+
+    const executeMcpCommand = React.useCallback(async (command: McpCommand): Promise<void> => {
+        const tab = tabsRef.current.find((candidate) => candidate.id === activeTabIdRef.current);
+        if (!tab || !tab.sessionId) return;
+
+        await executeMcpCommandForTab(tab.id, command);
+    }, [executeMcpCommandForTab]);
 
     return {
         tabs,
@@ -291,6 +378,7 @@ export function useSnapshotTabs(): SnapshotTabsController {
         updateActiveInput,
         goBack,
         goForward,
-        reloadCurrent
+        reloadCurrent,
+        executeMcpCommand
     };
 }

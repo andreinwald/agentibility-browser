@@ -1,4 +1,4 @@
-import type { SnapshotResponse } from '../shared/snapshot.js';
+import type { CommandHistoryEntry, SnapshotResponse } from '../shared/snapshot.js';
 
 export type Tab = {
     id: number;
@@ -12,6 +12,7 @@ export type Tab = {
     refreshing: boolean;
     requestToken: number;
     sessionId?: string;
+    commandHistory: CommandHistoryEntry[];
 };
 
 export type LoadMode = 'navigate' | 'refresh';

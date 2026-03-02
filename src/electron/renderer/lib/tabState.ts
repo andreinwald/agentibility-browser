@@ -60,7 +60,8 @@ export function createEmptyTab(id: number, initialUrl = ''): Tab {
         loading: false,
         refreshing: false,
         requestToken: 0,
-        sessionId: undefined
+        sessionId: undefined,
+        commandHistory: []
     };
 }
 
