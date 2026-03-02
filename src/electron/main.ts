@@ -1,6 +1,7 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import path from 'node:path';
-import { loadSnapshot } from './SnapshotService.js';
+import { registerSnapshotIpcHandlers } from './main/ipc/registerSnapshotIpc.js';
+import { closeAllSnapshotSessions } from './main/services/SnapshotService.js';
 
 const rendererHtmlPath = path.join(app.getAppPath(), 'src', 'electron', 'index.html');
 const preloadScriptPath = path.join(app.getAppPath(), 'src', 'electron', 'preload.cjs');
@@ -28,9 +29,7 @@ function createWindow(): BrowserWindow {
 }
 
 app.whenReady().then(() => {
-    ipcMain.handle('snapshot:load', async (_event, rawUrl: unknown) => {
-        return loadSnapshot(typeof rawUrl === 'string' ? rawUrl : '');
-    });
+    registerSnapshotIpcHandlers();
 
     createWindow();
 
@@ -42,7 +41,13 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
+    void closeAllSnapshotSessions();
+
     if (process.platform !== 'darwin') {
         app.quit();
     }
+});
+
+app.on('before-quit', () => {
+    void closeAllSnapshotSessions();
 });

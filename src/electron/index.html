@@ -13,35 +13,9 @@
     <link rel="stylesheet" href="./renderer.css" />
 </head>
 <body class="bg-background text-foreground antialiased">
-    <header class="chrome-header">
-        <div class="chrome-tabbar">
-            <div id="tabs" class="chrome-tabs">
-                <button id="new-tab-button" type="button" class="chrome-new-tab" aria-label="New tab">+</button>
-            </div>
-        </div>
-
-        <form id="url-form" class="chrome-toolbar">
-            <button id="back-button" type="button" class="chrome-nav-btn" aria-label="Back" title="Back">←</button>
-            <button id="forward-button" type="button" class="chrome-nav-btn" aria-label="Forward" title="Forward">→</button>
-            <button id="reload-button" type="button" class="chrome-nav-btn" aria-label="Reload" title="Reload">↻</button>
-            <label class="chrome-omnibox" for="url-input">
-                <input
-                    id="url-input"
-                    name="url"
-                    type="text"
-                    placeholder="Type website URL here"
-                    class="chrome-omnibox-input"
-                />
-            </label>
-        </form>
-
-        <div id="error" hidden class="chrome-error"></div>
-    </header>
-
-    <main id="content" class="mx-auto w-full max-w-6xl px-3 py-4">
-        <div class="w-full rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">No snapshot yet.</div>
-    </main>
-
+    <div id="root"></div>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script type="module" src="../../dist/electron/renderer.js"></script>
 </body>
 </html>

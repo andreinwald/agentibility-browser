@@ -1,8 +1,16 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { SnapshotResponse } from './SnapshotService.js';
+import type { SnapshotApi } from './shared/snapshot.js';
 
-const snapshotApi = {
-    loadSnapshot: (url: string): Promise<SnapshotResponse> => ipcRenderer.invoke('snapshot:load', url)
+const snapshotApi: SnapshotApi = {
+    loadSnapshot: (url: string, sessionId?: string) => {
+        return ipcRenderer.invoke('snapshot:load', { rawUrl: url, sessionId });
+    },
+    refreshSnapshot: (sessionId: string) => {
+        return ipcRenderer.invoke('snapshot:refresh', { sessionId });
+    },
+    closeSession: (sessionId: string) => {
+        return ipcRenderer.invoke('snapshot:close-session', { sessionId });
+    }
 };
 
 contextBridge.exposeInMainWorld('snapshotApi', snapshotApi);
