@@ -180,6 +180,15 @@ function renderActiveTab(): void {
     backButton.disabled = tab.loading || tab.historyIndex <= 0;
     forwardButton.disabled = tab.loading || tab.historyIndex < 0 || tab.historyIndex >= tab.history.length - 1;
     reloadButton.disabled = tab.loading;
+    if (tab.loading) {
+        reloadButton.setAttribute('aria-label', 'Loading');
+        reloadButton.title = 'Loading';
+        reloadButton.innerHTML = '<span class="chrome-spinner" aria-hidden="true"></span>';
+    } else {
+        reloadButton.setAttribute('aria-label', 'Reload');
+        reloadButton.title = 'Reload';
+        reloadButton.textContent = '↻';
+    }
 }
 
 function createTab(initialUrl = ''): void {

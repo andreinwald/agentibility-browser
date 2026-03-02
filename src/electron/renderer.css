@@ -231,6 +231,22 @@ body {
     cursor: default;
 }
 
+.chrome-spinner {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 999px;
+    animation: chrome-spin 0.75s linear infinite;
+}
+
+@keyframes chrome-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
 .chrome-omnibox {
     display: flex;
     min-width: 0;
