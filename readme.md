@@ -10,3 +10,8 @@ npx playwright install chromium
 npm start # opens Electron app
 # Enter a URL and press `Go` to load the snapshot view.
 ```
+
+Build app for macOS or Windows:
+```bash
+npm run release
+```

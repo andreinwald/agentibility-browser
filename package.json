@@ -1,11 +1,20 @@
 {
+  "name": "agent-first-browser",
+  "version": "1.0.0",
+  "description": "Agent-first Browser - see your website like an AI agent",
+  "author": "Andrii Reinvald",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/andreinwald/agentibility-browser.git"
+  },
+  "homepage": "https://github.com/andreinwald/agentibility-browser",
   "type": "module",
   "main": "dist/electron/main.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "npm run build && electron .",
-    "dev": "npm run start",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "release": "npm run build && electron-builder"
   },
   "dependencies": {
     "agent-browser": "^0.15.1",
@@ -16,6 +25,26 @@
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^25.3.2",
     "electron": "^37.4.0",
+    "electron-builder": "^25.1.8",
     "typescript": "^5.9.3"
+  },
+  "build": {
+    "appId": "com.andreinwald.agent-first-browser",
+    "productName": "Agent-first Browser",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "src/electron/index.html",
+      "src/electron/preload.cjs"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    }
   }
 }
