@@ -9,7 +9,7 @@ export function App(): React.ReactElement {
         tabs,
         activeTab,
         activeEntry,
-        isBusy,
+        isLoading,
         activateTab,
         createTab,
         closeTab,
@@ -25,7 +25,7 @@ export function App(): React.ReactElement {
             <BrowserChrome
                 tabs={tabs}
                 activeTab={activeTab}
-                isBusy={isBusy}
+                isLoading={isLoading}
                 onActivateTab={activateTab}
                 onCreateTab={() => {
                     createTab();

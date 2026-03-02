@@ -5,7 +5,7 @@ declare const React: typeof import('react');
 type BrowserChromeProps = {
     tabs: Tab[];
     activeTab: Tab | null;
-    isBusy: boolean;
+    isLoading: boolean;
     onActivateTab: (tabId: number) => void;
     onCreateTab: () => void;
     onCloseTab: (tabId: number) => void;
@@ -20,7 +20,7 @@ export function BrowserChrome(props: BrowserChromeProps): React.ReactElement {
     const {
         tabs,
         activeTab,
-        isBusy,
+        isLoading,
         onActivateTab,
         onCreateTab,
         onCloseTab,
@@ -82,7 +82,7 @@ export function BrowserChrome(props: BrowserChromeProps): React.ReactElement {
                     className="chrome-nav-btn"
                     aria-label="Back"
                     title="Back"
-                    disabled={!activeTab || isBusy || activeTab.historyIndex <= 0}
+                    disabled={!activeTab || isLoading || activeTab.historyIndex <= 0}
                     onClick={onBack}
                 >
                     ←
@@ -93,7 +93,7 @@ export function BrowserChrome(props: BrowserChromeProps): React.ReactElement {
                     className="chrome-nav-btn"
                     aria-label="Forward"
                     title="Forward"
-                    disabled={!activeTab || isBusy || activeTab.historyIndex < 0 || activeTab.historyIndex >= activeTab.history.length - 1}
+                    disabled={!activeTab || isLoading || activeTab.historyIndex < 0 || activeTab.historyIndex >= activeTab.history.length - 1}
                     onClick={onForward}
                 >
                     →
@@ -102,12 +102,12 @@ export function BrowserChrome(props: BrowserChromeProps): React.ReactElement {
                     id="reload-button"
                     type="button"
                     className="chrome-nav-btn"
-                    aria-label={isBusy ? 'Loading' : 'Reload'}
-                    title={isBusy ? 'Loading' : 'Reload'}
-                    disabled={!activeTab || isBusy}
+                    aria-label={isLoading ? 'Loading' : 'Reload'}
+                    title={isLoading ? 'Loading' : 'Reload'}
+                    disabled={!activeTab || isLoading}
                     onClick={onReload}
                 >
-                    {isBusy ? <span className="chrome-spinner" aria-hidden="true" /> : '↻'}
+                    {isLoading ? <span className="chrome-spinner" aria-hidden="true" /> : '↻'}
                 </button>
                 <label className="chrome-omnibox" htmlFor="url-input">
                     <input

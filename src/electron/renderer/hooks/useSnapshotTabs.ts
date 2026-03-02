@@ -9,7 +9,7 @@ type SnapshotTabsController = {
     tabs: Tab[];
     activeTab: Tab | null;
     activeEntry: SnapshotResponse | null;
-    isBusy: boolean;
+    isLoading: boolean;
     activateTab: (tabId: number) => void;
     createTab: (initialUrl?: string) => void;
     closeTab: (tabId: number) => void;
@@ -217,7 +217,7 @@ export function useSnapshotTabs(): SnapshotTabsController {
     }, [tabs, activeTabId]);
 
     const activeEntry = getCurrentEntry(activeTab);
-    const isBusy = Boolean(activeTab?.loading || activeTab?.refreshing);
+    const isLoading = Boolean(activeTab?.loading);
 
     const submitActiveTab = React.useCallback((event: React.FormEvent<HTMLFormElement>): void => {
         event.preventDefault();
@@ -283,7 +283,7 @@ export function useSnapshotTabs(): SnapshotTabsController {
         tabs,
         activeTab,
         activeEntry,
-        isBusy,
+        isLoading,
         activateTab: setActiveTabId,
         createTab,
         closeTab,

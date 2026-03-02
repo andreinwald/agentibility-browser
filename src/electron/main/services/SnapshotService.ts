@@ -86,6 +86,23 @@ async function getSnapshotFromSession(session: SnapshotSession): Promise<{ htmlP
     return { htmlPieces, currentUrl };
 }
 
+type InitialNavigationStage = 'commit' | 'domcontentloaded';
+
+async function navigateForInitialSnapshot(session: SnapshotSession, targetUrl: string): Promise<InitialNavigationStage> {
+    const page = session.browser.getPage();
+
+    // Stage 1: wait only for initial response commit to return quickly.
+    await page.goto(targetUrl, { waitUntil: 'commit', timeout: 15000 });
+
+    // Stage 2: briefly wait for DOM to become available, but do not block too long.
+    try {
+        await page.waitForLoadState('domcontentloaded', { timeout: 500 });
+        return 'domcontentloaded';
+    } catch {
+        return 'commit';
+    }
+}
+
 export async function closeSnapshotSession(sessionId: string): Promise<void> {
     const normalized = sessionId.trim();
     if (!normalized) return;
@@ -179,16 +196,19 @@ export async function loadSnapshot(request: LoadSnapshotRequest): Promise<Snapsh
 
     try {
         await ensureSessionReady(session);
-        await session.browser.getPage().goto(targetUrl, { waitUntil: 'networkidle' });
+        const initialStage = await navigateForInitialSnapshot(session, targetUrl);
 
         const { htmlPieces, currentUrl } = await getSnapshotFromSession(session);
         const resolvedUrl = currentUrl || targetUrl;
+        const statusMessage = initialStage === 'domcontentloaded'
+            ? `Viewing ${resolvedUrl}`
+            : `Initial snapshot for ${resolvedUrl} (page still loading)`;
 
         return {
             sessionId: session.id,
             rawUrl,
             targetUrl: resolvedUrl,
-            statusMessage: `Viewing ${resolvedUrl}`,
+            statusMessage,
             errorMessage: '',
             htmlPieces
         };
