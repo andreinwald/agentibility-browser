@@ -41,6 +41,24 @@ let nextTabId = 1;
 const tabs: Tab[] = [];
 let activeTabId: number | null = null;
 
+function applySystemThemePreference(): void {
+    const root = document.documentElement;
+    const colorSchemeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+
+    const syncTheme = (event?: MediaQueryList | MediaQueryListEvent): void => {
+        const prefersDark = event ? event.matches : colorSchemeQuery.matches;
+        root.classList.toggle('dark', prefersDark);
+    };
+
+    syncTheme(colorSchemeQuery);
+
+    if (typeof colorSchemeQuery.addEventListener === 'function') {
+        colorSchemeQuery.addEventListener('change', syncTheme);
+    } else if (typeof colorSchemeQuery.addListener === 'function') {
+        colorSchemeQuery.addListener(syncTheme);
+    }
+}
+
 function escapeHtml(value: string): string {
     return String(value)
         .replace(/&/g, '&amp;')
@@ -282,6 +300,8 @@ function reloadCurrent(): void {
 }
 
 function init(): void {
+    applySystemThemePreference();
+
     if (!form || !input || !tabsEl || !backButton || !forwardButton || !reloadButton) {
         throw new Error('Required renderer elements are missing from index.html');
     }
