@@ -21,6 +21,8 @@ type SnapshotTabsController = {
     executeMcpCommand: (command: McpCommand) => Promise<void>;
 };
 
+const AUTO_REFRESH_INTERVAL_MS = 3000;
+
 function getEntryUrl(entry: SnapshotResponse | null): string {
     return entry?.targetUrl || entry?.rawUrl || '';
 }
@@ -124,7 +126,8 @@ export function useSnapshotTabs(): SnapshotTabsController {
                         errorMessage: message,
                         htmlPieces: [],
                         refs: {},
-                        commandHistory: candidate.commandHistory
+                        commandHistory: candidate.commandHistory,
+                        overlayHints: []
                     };
 
                     const completedTab: Tab = {
@@ -264,6 +267,8 @@ export function useSnapshotTabs(): SnapshotTabsController {
 
     React.useEffect(() => {
         const interval = window.setInterval(() => {
+            if (document.visibilityState !== 'visible') return;
+
             const tabId = activeTabIdRef.current;
             if (tabId === null) return;
 
@@ -275,7 +280,7 @@ export function useSnapshotTabs(): SnapshotTabsController {
             if (!onLatestEntry) return;
 
             void loadSnapshotForTab(tab.id, '', 'refresh');
-        }, 1000);
+        }, AUTO_REFRESH_INTERVAL_MS);
 
         return () => {
             window.clearInterval(interval);

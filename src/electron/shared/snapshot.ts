@@ -40,6 +40,21 @@ export type CommandHistoryEntry = {
     executedAt: string;
 };
 
+export type OverlayCloseAction = {
+    label: string;
+    selector: string;
+    confidence: 'high' | 'medium' | 'low';
+};
+
+export type OverlayHint = {
+    id: string;
+    kind: 'dialog' | 'cookie-banner' | 'overlay';
+    reason: string;
+    confidence: 'high' | 'medium' | 'low';
+    closeActions: OverlayCloseAction[];
+    htmlSnippet?: string;
+};
+
 export type SnapshotResponse = {
     sessionId?: string;
     rawUrl: string;
@@ -49,6 +64,7 @@ export type SnapshotResponse = {
     htmlPieces: string[];
     refs: SnapshotRefs;
     commandHistory: CommandHistoryEntry[];
+    overlayHints: OverlayHint[];
 };
 
 export type LoadSnapshotRequest = {
