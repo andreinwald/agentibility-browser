@@ -8,6 +8,7 @@ Desktop app similar to Google Chrome that renders web pages into text format (AR
 npm install
 npx playwright install chromium
 npm start # opens Electron app
+npm run web_preview # Vite-based web preview (http://127.0.0.1:4173)
 # Enter a URL and press `Go` to load the snapshot view.
 ```
 

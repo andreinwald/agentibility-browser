@@ -14,7 +14,8 @@
     "build": "tsc -p tsconfig.json",
     "start": "npm run build && electron .",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "release": "npm run build && electron-builder"
+    "release": "npm run build && electron-builder",
+    "web_preview": "vite --host 127.0.0.1 --port 4173 --strictPort --config vite.web-preview.config.ts"
   },
   "dependencies": {
     "agent-browser": "^0.15.1",
@@ -30,7 +31,8 @@
     "@types/react-dom": "^18.3.6",
     "electron": "^37.4.0",
     "electron-builder": "^25.1.8",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vite": "^7.1.12"
   },
   "build": {
     "appId": "com.andreinwald.agent-first-browser",
