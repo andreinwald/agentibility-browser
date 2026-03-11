@@ -11,6 +11,7 @@ import type {
     SnapshotRefs,
     SnapshotResponse
 } from '../../shared/snapshot.js';
+import { performance } from 'node:perf_hooks';
 
 type SnapshotSession = {
     id: string;
@@ -50,8 +51,14 @@ type OverlayDismissAttempt = {
     selectors: string[];
 };
 
+type TimingData = Record<string, number>;
+
 const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36';
 const MAX_COMMAND_HISTORY = 200;
+const DEFAULT_POST_WAIT_TIMEOUT_MS = 1500;
+const DEFAULT_NAVIGATION_TIMEOUT_MS = 10000;
+const OVERLAY_DISMISS_TIMEOUT_MS = 250;
+const OVERLAY_DISMISS_MAX_ATTEMPTS = 3;
 const FALLBACK_OVERLAY_CLOSE_ACTIONS: OverlayHint['closeActions'] = [
     {
         label: 'Close',
@@ -77,6 +84,38 @@ const FALLBACK_OVERLAY_CLOSE_ACTIONS: OverlayHint['closeActions'] = [
 
 const sessions = new Map<string, SnapshotSession>();
 let nextSessionId = 1;
+
+function markTiming(timing: TimingData | undefined, key: string, startMs: number): void {
+    if (!timing) return;
+    timing[key] = Math.max(0, Math.round(performance.now() - startMs));
+}
+
+function setTimingValue(timing: TimingData | undefined, key: string, valueMs: number): void {
+    if (!timing) return;
+    timing[key] = Math.max(0, Math.round(valueMs));
+}
+
+function applyTimingToParams(params: Record<string, string | boolean>, timing: TimingData | undefined): void {
+    if (!timing) return;
+    for (const [key, value] of Object.entries(timing)) {
+        params[`timing_${key}_ms`] = String(value);
+    }
+}
+
+function logTiming(label: string, timing: TimingData | undefined, meta?: Record<string, string>): void {
+    if (!timing) return;
+    const parts: string[] = [];
+    if (meta) {
+        for (const [key, value] of Object.entries(meta)) {
+            if (value) parts.push(`${key}=${value}`);
+        }
+    }
+    const metaText = parts.length > 0 ? ` ${parts.join(' ')}` : '';
+    const timings = Object.entries(timing)
+        .map(([key, value]) => `${key}=${value}ms`)
+        .join(' ');
+    console.info(`[timing] ${label}${metaText} ${timings}`.trim());
+}
 
 export function normalizeRequestedUrl(raw: string): string | undefined {
     const trimmed = raw.trim();
@@ -151,11 +190,22 @@ async function ensureSessionReady(session: SnapshotSession): Promise<void> {
     }
 
     await session.browser.ensurePage();
+    try {
+        const page = session.browser.getPage();
+        page.setDefaultNavigationTimeout(DEFAULT_NAVIGATION_TIMEOUT_MS);
+    } catch {
+        // Ignore default navigation timeout errors.
+    }
 }
 
-async function getSnapshotFromSession(session: SnapshotSession): Promise<SessionSnapshot> {
+async function getSnapshotFromSession(session: SnapshotSession, timing?: TimingData): Promise<SessionSnapshot> {
+    const snapshotStart = performance.now();
     const snapshot = await session.browser.getSnapshot({});
+    markTiming(timing, 'snapshot', snapshotStart);
+
+    const renderStart = performance.now();
     const htmlPieces = ariaToHtml(snapshot.tree);
+    markTiming(timing, 'aria_to_html', renderStart);
     const currentUrl = session.browser.getPage().url() || '';
 
     return {
@@ -194,9 +244,12 @@ async function buildSnapshotResponse(
         targetUrl?: string;
         statusMessage?: string;
         errorMessage?: string;
-    }
+    },
+    timing?: TimingData
 ): Promise<SnapshotResponse> {
-    const { htmlPieces, currentUrl, refs } = await getSnapshotFromSession(session);
+    const buildStart = performance.now();
+    const { htmlPieces, currentUrl, refs } = await getSnapshotFromSession(session, timing);
+    markTiming(timing, 'build_snapshot', buildStart);
     const defaultStatus = currentUrl ? `Viewing ${currentUrl}` : 'Viewing current page';
 
     return {
@@ -219,16 +272,19 @@ async function buildSnapshotResponseWithRetryOnEmpty(
         targetUrl?: string;
         statusMessage?: string;
         errorMessage?: string;
-    }
+    },
+    timing?: TimingData
 ): Promise<SnapshotResponse> {
-    const initial = await buildSnapshotResponse(session, options);
+    const initial = await buildSnapshotResponse(session, options, timing);
     if (initial.errorMessage || initial.htmlPieces.length > 0) {
         return initial;
     }
 
     try {
+        const waitStart = performance.now();
         await session.browser.getPage().waitForLoadState('domcontentloaded', { timeout: 3000 });
-        return await buildSnapshotResponse(session, options);
+        markTiming(timing, 'empty_retry_wait', waitStart);
+        return await buildSnapshotResponse(session, options, timing);
     } catch {
         return initial;
     }
@@ -290,6 +346,66 @@ function toHistoryParams(command: McpCommand): Record<string, string | boolean> 
             return {
                 selector: command.selector
             };
+    }
+}
+
+function applyWaitForParams(command: McpCommand, params: Record<string, string | boolean>): void {
+    if (!('waitFor' in command)) return;
+    const waitFor = command.waitFor;
+    if (!waitFor) return;
+
+    params.waitFor = waitFor.type;
+    if ('value' in waitFor && waitFor.value) {
+        params.waitForValue = waitFor.value;
+    }
+    if ('timeoutMs' in waitFor && waitFor.timeoutMs) {
+        params.waitForTimeoutMs = String(waitFor.timeoutMs);
+    }
+    if (waitFor.type === 'selector' && waitFor.state) {
+        params.waitForState = waitFor.state;
+    }
+}
+
+async function applyPostActionWait(
+    session: SnapshotSession,
+    command: McpCommand,
+    params: Record<string, string | boolean>,
+    timing?: TimingData
+): Promise<void> {
+    if (!('waitFor' in command)) return;
+    const waitFor = command.waitFor;
+    if (!waitFor || waitFor.type === 'none') return;
+
+    const page = session.browser.getPage();
+    const timeoutMs = 'timeoutMs' in waitFor && waitFor.timeoutMs
+        ? waitFor.timeoutMs
+        : DEFAULT_POST_WAIT_TIMEOUT_MS;
+
+    params.waitForTimeoutMs = String(timeoutMs);
+
+    const waitStart = performance.now();
+    try {
+        if (waitFor.type === 'domcontentloaded' || waitFor.type === 'load' || waitFor.type === 'networkidle') {
+            await page.waitForLoadState(waitFor.type, { timeout: timeoutMs });
+            return;
+        }
+
+        if (waitFor.type === 'url') {
+            await page.waitForURL(waitFor.value, { timeout: timeoutMs });
+            return;
+        }
+
+        if (waitFor.type === 'selector') {
+            await page.waitForSelector(waitFor.value, {
+                timeout: timeoutMs,
+                state: waitFor.state ?? 'visible'
+            });
+        }
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        params.waitForError = message;
+    } finally {
+        markTiming(timing, 'post_wait', waitStart);
     }
 }
 
@@ -729,7 +845,7 @@ async function tryDismissBlockingOverlay(session: SnapshotSession, commandId: st
 
     const clickedSelectors: string[] = [];
     const page = session.browser.getPage();
-    const maxAttempts = 4;
+    const maxAttempts = OVERLAY_DISMISS_MAX_ATTEMPTS;
     let attemptNumber = 1;
 
     for (const selector of selectors) {
@@ -737,7 +853,7 @@ async function tryDismissBlockingOverlay(session: SnapshotSession, commandId: st
 
         try {
             await page.locator(selector).first().click({
-                timeout: 1200,
+                timeout: OVERLAY_DISMISS_TIMEOUT_MS,
                 force: true
             });
             if (!clickedSelectors.includes(selector)) {
@@ -750,7 +866,7 @@ async function tryDismissBlockingOverlay(session: SnapshotSession, commandId: st
     }
 
     if (clickedSelectors.length > 0) {
-        await session.browser.getPage().waitForTimeout(250).catch(() => undefined);
+        await session.browser.getPage().waitForTimeout(150).catch(() => undefined);
     }
 
     return {
@@ -759,20 +875,28 @@ async function tryDismissBlockingOverlay(session: SnapshotSession, commandId: st
     };
 }
 
-async function executeSessionCommand(session: SnapshotSession, command: McpCommand): Promise<CommandExecutionResult> {
+async function executeSessionCommand(session: SnapshotSession, command: McpCommand, timing?: TimingData): Promise<CommandExecutionResult> {
     const mapped = toAgentBrowserCommand(session, command);
     const commandLine = toCommandLine(mapped);
     const params = toHistoryParams(mapped);
+    applyWaitForParams(command, params);
 
+    const executeStart = performance.now();
     let result: Response = await executeCommand(mapped.protocolCommand, session.browser);
+    markTiming(timing, 'execute_command', executeStart);
     let retriedAfterSnapshot = false;
 
     if (!result.success && shouldRetryCommandAfterSnapshotRefresh(mapped, result.error)) {
         retriedAfterSnapshot = true;
 
         try {
+            const retrySnapshotStart = performance.now();
             await session.browser.getSnapshot({});
+            markTiming(timing, 'retry_snapshot', retrySnapshotStart);
+
+            const retryExecuteStart = performance.now();
             result = await executeCommand(mapped.protocolCommand, session.browser);
+            markTiming(timing, 'retry_execute_command', retryExecuteStart);
         } catch {
             // Ignore refresh errors and return the original command failure.
         }
@@ -783,9 +907,13 @@ async function executeSessionCommand(session: SnapshotSession, command: McpComma
     }
 
     if (!result.success && shouldInspectOverlayForCommand(mapped, result.error)) {
+        const overlayDetectStart = performance.now();
         let overlayHints = await detectBlockingOverlayHints(session);
+        markTiming(timing, 'overlay_detect', overlayDetectStart);
         if (overlayHints.length === 0) {
+            const snippetStart = performance.now();
             const htmlSnippet = await getPageDomSnippet(session);
+            markTiming(timing, 'overlay_dom_snippet', snippetStart);
             overlayHints = [{
                 id: 'overlay-fallback',
                 kind: 'overlay',
@@ -808,11 +936,15 @@ async function executeSessionCommand(session: SnapshotSession, command: McpComma
         if (overlayHints.length > 0) {
             params.overlayHints = String(overlayHints.length);
 
+            const dismissStart = performance.now();
             const dismissAttempt = await tryDismissBlockingOverlay(session, mapped.commandId, overlayHints);
+            markTiming(timing, 'overlay_dismiss', dismissStart);
             if (dismissAttempt.dismissed) {
                 params.overlayDismissed = true;
                 params.overlayCloseSelectors = dismissAttempt.selectors.join(', ');
+                const overlayExecuteStart = performance.now();
                 result = await executeCommand(mapped.protocolCommand, session.browser);
+                markTiming(timing, 'overlay_retry_execute', overlayExecuteStart);
             } else {
                 params.overlayDismissed = false;
             }
@@ -821,6 +953,10 @@ async function executeSessionCommand(session: SnapshotSession, command: McpComma
 
     if (result.success) {
         session.overlayHints = [];
+    }
+
+    if (result.success) {
+        await applyPostActionWait(session, command, params, timing);
     }
 
     const historyEntry: CommandHistoryEntry = {
@@ -898,8 +1034,15 @@ export async function refreshSnapshot(sessionId: string): Promise<SnapshotRespon
     }
 
     try {
+        const timing: TimingData = {};
+        const totalStart = performance.now();
+        const ensureStart = performance.now();
         await ensureSessionReady(session);
-        return await buildSnapshotResponse(session, {});
+        markTiming(timing, 'ensure_session', ensureStart);
+        const response = await buildSnapshotResponse(session, {}, timing);
+        setTimingValue(timing, 'total', performance.now() - totalStart);
+        logTiming('refresh-snapshot', timing, { sessionId: session.id });
+        return response;
     } catch (error) {
         return createBaseSnapshotResponse({
             sessionId: session.id,
@@ -938,21 +1081,29 @@ export async function loadSnapshot(request: LoadSnapshotRequest): Promise<Snapsh
     const session = getOrCreateSession(sessionId);
 
     try {
+        const timing: TimingData = {};
+        const totalStart = performance.now();
+        const ensureStart = performance.now();
         await ensureSessionReady(session);
+        markTiming(timing, 'ensure_session', ensureStart);
         const execution = await executeSessionCommand(session, {
             action: 'open',
             alias: 'open',
             url: targetUrl,
             waitUntil: 'domcontentloaded'
-        });
+        }, timing);
 
         const responseBuilder = execution.errorMessage ? buildSnapshotResponse : buildSnapshotResponseWithRetryOnEmpty;
-        return await responseBuilder(session, {
+        const response = await responseBuilder(session, {
             rawUrl,
             targetUrl,
             statusMessage: execution.errorMessage ? `Failed to load ${targetUrl}` : `Viewing ${targetUrl}`,
             errorMessage: execution.errorMessage || ''
-        });
+        }, timing);
+        setTimingValue(timing, 'total', performance.now() - totalStart);
+        applyTimingToParams(execution.historyEntry.params, timing);
+        logTiming('load-snapshot', timing, { sessionId: session.id, url: targetUrl });
+        return response;
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
 
@@ -998,16 +1149,24 @@ export async function executeMcpCommand(request: ExecuteMcpRequest): Promise<Sna
     }
 
     try {
+        const timing: TimingData = {};
+        const totalStart = performance.now();
+        const ensureStart = performance.now();
         await ensureSessionReady(session);
-        const execution = await executeSessionCommand(session, request.command);
+        markTiming(timing, 'ensure_session', ensureStart);
+        const execution = await executeSessionCommand(session, request.command, timing);
 
         const responseBuilder = execution.errorMessage ? buildSnapshotResponse : buildSnapshotResponseWithRetryOnEmpty;
-        return await responseBuilder(session, {
+        const response = await responseBuilder(session, {
             statusMessage: execution.errorMessage
                 ? `Failed: ${execution.historyEntry.commandLine}`
                 : `Executed ${execution.historyEntry.commandLine}`,
             errorMessage: execution.errorMessage || ''
-        });
+        }, timing);
+        setTimingValue(timing, 'total', performance.now() - totalStart);
+        applyTimingToParams(execution.historyEntry.params, timing);
+        logTiming('execute-mcp', timing, { sessionId: session.id, command: execution.historyEntry.commandLine });
+        return response;
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
 

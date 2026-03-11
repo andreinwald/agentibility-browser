@@ -3,6 +3,10 @@ import path from 'node:path';
 import { registerSnapshotIpcHandlers } from './main/ipc/registerSnapshotIpc.js';
 import { closeAllSnapshotSessions } from './main/services/SnapshotService.js';
 
+if (!process.env.AGENT_BROWSER_DEFAULT_TIMEOUT) {
+    process.env.AGENT_BROWSER_DEFAULT_TIMEOUT = '1000';
+}
+
 const rendererHtmlPath = path.join(app.getAppPath(), 'src', 'electron', 'index.html');
 const preloadScriptPath = path.join(app.getAppPath(), 'src', 'electron', 'preload.cjs');
 

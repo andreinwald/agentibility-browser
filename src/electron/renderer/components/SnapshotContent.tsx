@@ -23,6 +23,11 @@ function findInteractiveTarget(start: EventTarget | null): HTMLElement | null {
 }
 
 export function SnapshotContent({ htmlPieces, onMcpAction }: SnapshotContentProps): React.ReactElement {
+    const defaultWaitFor = React.useMemo(() => ({
+        type: 'domcontentloaded' as const,
+        timeoutMs: 1000
+    }), []);
+
     const handleClick = React.useCallback((event: React.MouseEvent<HTMLDivElement>) => {
         if (!onMcpAction) return;
 
@@ -42,9 +47,10 @@ export function SnapshotContent({ htmlPieces, onMcpAction }: SnapshotContentProp
         void onMcpAction({
             action: 'click',
             selector,
-            ...(newTab ? { newTab: true } : {})
+            ...(newTab ? { newTab: true } : {}),
+            waitFor: defaultWaitFor
         });
-    }, [onMcpAction]);
+    }, [defaultWaitFor, onMcpAction]);
 
     const handleDoubleClick = React.useCallback((event: React.MouseEvent<HTMLDivElement>) => {
         if (!onMcpAction) return;
@@ -63,9 +69,10 @@ export function SnapshotContent({ htmlPieces, onMcpAction }: SnapshotContentProp
 
         void onMcpAction({
             action: 'dblclick',
-            selector
+            selector,
+            waitFor: defaultWaitFor
         });
-    }, [onMcpAction]);
+    }, [defaultWaitFor, onMcpAction]);
 
     if (!Array.isArray(htmlPieces) || htmlPieces.length === 0) {
         return (

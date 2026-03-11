@@ -1,5 +1,25 @@
 export type WaitUntilState = 'load' | 'domcontentloaded' | 'networkidle';
 
+export type WaitForCommand =
+    | {
+        type: 'none';
+    }
+    | {
+        type: 'domcontentloaded' | 'load' | 'networkidle';
+        timeoutMs?: number;
+    }
+    | {
+        type: 'url';
+        value: string;
+        timeoutMs?: number;
+    }
+    | {
+        type: 'selector';
+        value: string;
+        timeoutMs?: number;
+        state?: 'attached' | 'detached' | 'visible' | 'hidden';
+    };
+
 export type SnapshotRef = {
     selector: string;
     role: string;
@@ -20,14 +40,17 @@ export type McpCommand =
         action: 'click';
         selector: string;
         newTab?: boolean;
+        waitFor?: WaitForCommand;
     }
     | {
         action: 'dblclick';
         selector: string;
+        waitFor?: WaitForCommand;
     }
     | {
         action: 'focus';
         selector: string;
+        waitFor?: WaitForCommand;
     };
 
 export type CommandHistoryEntry = {

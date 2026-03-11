@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron';
-import type { ExecuteMcpRequest, LoadSnapshotRequest, McpCommand } from '../../shared/snapshot.js';
+import type { ExecuteMcpRequest, LoadSnapshotRequest, McpCommand, WaitForCommand } from '../../shared/snapshot.js';
 import { closeSnapshotSession, loadSnapshot, refreshSnapshot, executeMcpCommand } from '../services/SnapshotService.js';
 
 function parseLoadRequest(payload: unknown): LoadSnapshotRequest {
@@ -46,6 +46,56 @@ function parseExecuteMcpRequest(payload: unknown): ExecuteMcpRequest {
     };
 }
 
+function parseWaitFor(payload: unknown): WaitForCommand | undefined {
+    if (!payload || typeof payload !== 'object') return undefined;
+
+    const rawPayload = payload as Record<string, unknown>;
+    const type = typeof rawPayload.type === 'string' ? rawPayload.type : '';
+    const timeoutMs = typeof rawPayload.timeoutMs === 'number' && Number.isFinite(rawPayload.timeoutMs)
+        ? rawPayload.timeoutMs
+        : undefined;
+
+    if (type === 'none') {
+        return { type: 'none' };
+    }
+
+    if (type === 'domcontentloaded' || type === 'load' || type === 'networkidle') {
+        return {
+            type,
+            ...(timeoutMs ? { timeoutMs } : {})
+        };
+    }
+
+    if (type === 'url') {
+        const value = typeof rawPayload.value === 'string' ? rawPayload.value : '';
+        if (!value.trim()) return undefined;
+        return {
+            type,
+            value,
+            ...(timeoutMs ? { timeoutMs } : {})
+        };
+    }
+
+    if (type === 'selector') {
+        const value = typeof rawPayload.value === 'string' ? rawPayload.value : '';
+        if (!value.trim()) return undefined;
+        const state = rawPayload.state === 'attached'
+            || rawPayload.state === 'detached'
+            || rawPayload.state === 'visible'
+            || rawPayload.state === 'hidden'
+            ? rawPayload.state
+            : undefined;
+        return {
+            type,
+            value,
+            ...(timeoutMs ? { timeoutMs } : {}),
+            ...(state ? { state } : {})
+        };
+    }
+
+    return undefined;
+}
+
 function parseMcpCommand(payload: unknown): McpCommand {
     if (!payload || typeof payload !== 'object') {
         return { action: 'click', selector: '' };
@@ -69,21 +119,24 @@ function parseMcpCommand(payload: unknown): McpCommand {
     if (action === 'dblclick') {
         return {
             action: 'dblclick',
-            selector: typeof rawPayload.selector === 'string' ? rawPayload.selector : ''
+            selector: typeof rawPayload.selector === 'string' ? rawPayload.selector : '',
+            waitFor: parseWaitFor(rawPayload.waitFor)
         };
     }
 
     if (action === 'focus') {
         return {
             action: 'focus',
-            selector: typeof rawPayload.selector === 'string' ? rawPayload.selector : ''
+            selector: typeof rawPayload.selector === 'string' ? rawPayload.selector : '',
+            waitFor: parseWaitFor(rawPayload.waitFor)
         };
     }
 
     return {
         action: 'click',
         selector: typeof rawPayload.selector === 'string' ? rawPayload.selector : '',
-        newTab: Boolean(rawPayload.newTab)
+        newTab: Boolean(rawPayload.newTab),
+        waitFor: parseWaitFor(rawPayload.waitFor)
     };
 }
 
