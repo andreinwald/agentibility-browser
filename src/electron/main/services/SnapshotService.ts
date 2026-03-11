@@ -50,6 +50,7 @@ type OverlayDismissAttempt = {
     selectors: string[];
 };
 
+const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36';
 const MAX_COMMAND_HISTORY = 200;
 const FALLBACK_OVERLAY_CLOSE_ACTIONS: OverlayHint['closeActions'] = [
     {
@@ -140,7 +141,12 @@ function getOrCreateSession(sessionId?: string): SnapshotSession {
 
 async function ensureSessionReady(session: SnapshotSession): Promise<void> {
     if (!session.launched) {
-        await session.browser.launch({ action: 'launch', id: 'default', headless: true });
+        await session.browser.launch({
+            action: 'launch',
+            id: 'default',
+            headless: true,
+            userAgent: DEFAULT_USER_AGENT
+        });
         session.launched = true;
     }
 
