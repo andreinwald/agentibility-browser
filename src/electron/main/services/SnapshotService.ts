@@ -57,29 +57,19 @@ const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Appl
 const MAX_COMMAND_HISTORY = 200;
 const DEFAULT_POST_WAIT_TIMEOUT_MS = 1500;
 const DEFAULT_NAVIGATION_TIMEOUT_MS = 10000;
-const OVERLAY_DISMISS_TIMEOUT_MS = 250;
+const OVERLAY_DISMISS_TIMEOUT_MS = 3000;
+const OVERLAY_FRAME_SEARCH_TIMEOUT_MS = 250;
 const OVERLAY_DISMISS_MAX_ATTEMPTS = 3;
 const FALLBACK_OVERLAY_CLOSE_ACTIONS: OverlayHint['closeActions'] = [
-    {
-        label: 'Close',
-        selector: 'button[aria-label="Close"]',
-        confidence: 'low'
-    },
-    {
-        label: 'Dismiss',
-        selector: 'button[title="Close"]',
-        confidence: 'low'
-    },
-    {
-        label: 'Accept cookies',
-        selector: '#onetrust-accept-btn-handler',
-        confidence: 'low'
-    },
-    {
-        label: 'Reject cookies',
-        selector: '#onetrust-reject-all-handler',
-        confidence: 'low'
-    }
+    { label: 'Accept cookies', selector: 'button.fc-primary-button', confidence: 'low' },
+    { label: 'Accept All', selector: 'button:has-text("Accept All")', confidence: 'low' },
+    { label: 'Accept', selector: 'button:has-text("Accept")', confidence: 'low' },
+    { label: 'Allow All', selector: 'button:has-text("Allow All")', confidence: 'low' },
+    { label: 'Agree', selector: 'button:has-text("Agree")', confidence: 'low' },
+    { label: 'Accept cookies', selector: '#onetrust-accept-btn-handler', confidence: 'low' },
+    { label: 'Reject cookies', selector: '#onetrust-reject-all-handler', confidence: 'low' },
+    { label: 'Close', selector: 'button[aria-label="Close"]', confidence: 'low' },
+    { label: 'Dismiss', selector: 'button[title="Close"]', confidence: 'low' }
 ];
 
 const sessions = new Map<string, SnapshotSession>();
@@ -544,277 +534,293 @@ function shouldInspectOverlayForCommand(command: McpCommand, errorMessage?: stri
 }
 
 async function detectBlockingOverlayHints(session: SnapshotSession): Promise<OverlayHint[]> {
-    try {
-        const rawHints = await session.browser.getPage().evaluate(() => {
-            const runtime = globalThis as { document?: any; innerWidth?: number; innerHeight?: number; getComputedStyle?: (el: any) => any; CSS?: { escape?: (value: string) => string } };
-            const doc = runtime.document;
-            if (!doc?.body) return [] as RawOverlayHint[];
+    const page = session.browser.getPage();
+    const frames = page.frames();
+    const allHints: OverlayHint[] = [];
 
-            const viewportWidth = Number(runtime.innerWidth || 0);
-            const viewportHeight = Number(runtime.innerHeight || 0);
-            if (viewportWidth <= 0 || viewportHeight <= 0) return [] as RawOverlayHint[];
-            const viewportArea = viewportWidth * viewportHeight;
+    for (const frame of frames) {
+        try {
+            const rawHints = await frame.evaluate(() => {
+                const runtime = globalThis as { document?: any; innerWidth?: number; innerHeight?: number; getComputedStyle?: (el: any) => any; CSS?: { escape?: (value: string) => string } };
+                const doc = runtime.document;
+                if (!doc?.body) return [] as RawOverlayHint[];
 
-            const toArray = (value: any): any[] => Array.from(value || []);
-            const trimText = (value: unknown): string => String(value || '').replace(/\s+/g, ' ').trim();
-            const escapeAttr = (value: string): string => value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-            const escapeIdent = (value: string): string => {
-                if (runtime.CSS?.escape) return runtime.CSS.escape(value);
-                return value.replace(/[^a-zA-Z0-9_-]/g, '\\$&');
-            };
+                const viewportWidth = Number(runtime.innerWidth || 0);
+                const viewportHeight = Number(runtime.innerHeight || 0);
+                if (viewportWidth <= 0 || viewportHeight <= 0) return [] as RawOverlayHint[];
+                const viewportArea = viewportWidth * viewportHeight;
 
-            const isVisible = (element: any): boolean => {
-                if (!element || typeof element.getBoundingClientRect !== 'function') return false;
-                const style = runtime.getComputedStyle?.(element);
-                if (!style) return false;
-                if (style.display === 'none' || style.visibility === 'hidden') return false;
-                if (Number(style.opacity || 1) <= 0.02) return false;
+                const toArray = (value: any): any[] => Array.from(value || []);
+                const trimText = (value: unknown): string => String(value || '').replace(/\s+/g, ' ').trim();
+                const escapeAttr = (value: string): string => value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+                const escapeIdent = (value: string): string => {
+                    if (runtime.CSS?.escape) return runtime.CSS.escape(value);
+                    return value.replace(/[^a-zA-Z0-9_-]/g, '\\$&');
+                };
 
-                const rect = element.getBoundingClientRect();
-                if (rect.width < 6 || rect.height < 6) return false;
-                if (rect.bottom < 0 || rect.right < 0) return false;
-                if (rect.top > viewportHeight || rect.left > viewportWidth) return false;
-                return true;
-            };
+                const isVisible = (element: any): boolean => {
+                    if (!element || typeof element.getBoundingClientRect !== 'function') return false;
+                    const style = runtime.getComputedStyle?.(element);
+                    if (!style) return false;
+                    if (style.display === 'none' || style.visibility === 'hidden') return false;
+                    if (Number(style.opacity || 1) <= 0.02) return false;
 
-            const uniqueSelector = (selector: string): boolean => {
-                if (!selector) return false;
-                try {
-                    return doc.querySelectorAll(selector).length === 1;
-                } catch {
-                    return false;
-                }
-            };
+                    const rect = element.getBoundingClientRect();
+                    // For iframes, we might be in a smaller coordinate system, so don't be too strict on viewport bounds if it's a subframe
+                    return rect.width >= 6 && rect.height >= 6;
+                };
 
-            const buildSelector = (element: any): string => {
-                if (!element || !element.tagName) return '';
+                const uniqueSelector = (selector: string): boolean => {
+                    if (!selector) return false;
+                    try {
+                        return doc.querySelectorAll(selector).length === 1;
+                    } catch {
+                        return false;
+                    }
+                };
 
-                const tag = String(element.tagName).toLowerCase();
-                const id = trimText(element.id);
-                if (id) {
-                    const byId = `#${escapeIdent(id)}`;
-                    if (uniqueSelector(byId)) return byId;
-                }
+                const buildSelector = (element: any): string => {
+                    if (!element || !element.tagName) return '';
 
-                const dataTestId = trimText(element.getAttribute?.('data-testid'));
-                if (dataTestId) {
-                    const byTestId = `${tag}[data-testid="${escapeAttr(dataTestId)}"]`;
-                    if (uniqueSelector(byTestId)) return byTestId;
-                }
-
-                const ariaLabel = trimText(element.getAttribute?.('aria-label'));
-                if (ariaLabel) {
-                    const byAria = `${tag}[aria-label="${escapeAttr(ariaLabel)}"]`;
-                    if (uniqueSelector(byAria)) return byAria;
-                }
-
-                const title = trimText(element.getAttribute?.('title'));
-                if (title) {
-                    const byTitle = `${tag}[title="${escapeAttr(title)}"]`;
-                    if (uniqueSelector(byTitle)) return byTitle;
-                }
-
-                const className = trimText(element.className).split(/\s+/).find((entry) => /^[a-zA-Z0-9_-]+$/.test(entry));
-                if (className) {
-                    const byClass = `${tag}.${className}`;
-                    if (uniqueSelector(byClass)) return byClass;
-                }
-
-                const parts: string[] = [];
-                let current = element;
-                for (let depth = 0; depth < 4 && current && current !== doc.body; depth += 1) {
-                    let part = String(current.tagName || 'div').toLowerCase();
-                    if (current.id) {
-                        part += `#${escapeIdent(String(current.id))}`;
-                        parts.unshift(part);
-                        break;
+                    const tag = String(element.tagName).toLowerCase();
+                    const id = trimText(element.id);
+                    if (id) {
+                        const byId = `#${escapeIdent(id)}`;
+                        if (uniqueSelector(byId)) return byId;
                     }
 
-                    const parent = current.parentElement;
-                    if (parent) {
-                        const siblings = toArray(parent.children).filter((candidate) => candidate.tagName === current.tagName);
-                        if (siblings.length > 1) {
-                            const index = siblings.indexOf(current);
-                            if (index >= 0) {
-                                part += `:nth-of-type(${index + 1})`;
+                    const dataTestId = trimText(element.getAttribute?.('data-testid'));
+                    if (dataTestId) {
+                        const byTestId = `${tag}[data-testid="${escapeAttr(dataTestId)}"]`;
+                        if (uniqueSelector(byTestId)) return byTestId;
+                    }
+
+                    const ariaLabel = trimText(element.getAttribute?.('aria-label'));
+                    if (ariaLabel) {
+                        const byAria = `${tag}[aria-label="${escapeAttr(ariaLabel)}"]`;
+                        if (uniqueSelector(byAria)) return byAria;
+                    }
+
+                    const title = trimText(element.getAttribute?.('title'));
+                    if (title) {
+                        const byTitle = `${tag}[title="${escapeAttr(title)}"]`;
+                        if (uniqueSelector(byTitle)) return byTitle;
+                    }
+
+                    const className = trimText(element.className).split(/\s+/).find((entry) => /^[a-zA-Z0-9_-]+$/.test(entry));
+                    if (className) {
+                        const byClass = `${tag}.${className}`;
+                        if (uniqueSelector(byClass)) return byClass;
+                    }
+
+                    const parts: string[] = [];
+                    let current = element;
+                    for (let depth = 0; depth < 4 && current && current !== doc.body; depth += 1) {
+                        let part = String(current.tagName || 'div').toLowerCase();
+                        if (current.id) {
+                            part += `#${escapeIdent(String(current.id))}`;
+                            parts.unshift(part);
+                            break;
+                        }
+
+                        const parent = current.parentElement;
+                        if (parent) {
+                            const siblings = toArray(parent.children).filter((candidate) => candidate.tagName === current.tagName);
+                            if (siblings.length > 1) {
+                                const index = siblings.indexOf(current);
+                                if (index >= 0) {
+                                    part += `:nth-of-type(${index + 1})`;
+                                }
                             }
                         }
+
+                        parts.unshift(part);
+                        current = parent;
                     }
 
-                    parts.unshift(part);
-                    current = parent;
-                }
-
-                const byPath = parts.join(' > ');
-                if (uniqueSelector(byPath)) return byPath;
-                return '';
-            };
-
-            const elementLabel = (element: any): string => {
-                if (!element) return '';
-                if (element.tagName?.toLowerCase() === 'input') {
-                    const inputLabel = trimText(element.value);
-                    if (inputLabel) return inputLabel;
-                }
-                return trimText(
-                    element.getAttribute?.('aria-label')
-                    || element.getAttribute?.('title')
-                    || element.textContent
-                    || ''
-                );
-            };
-
-            const isLikelyOverlay = (element: any): boolean => {
-                if (!isVisible(element)) return false;
-
-                const style = runtime.getComputedStyle?.(element);
-                if (!style) return false;
-
-                const rect = element.getBoundingClientRect();
-                const areaRatio = (rect.width * rect.height) / viewportArea;
-                const zIndex = Number.parseInt(style.zIndex || '0', 10);
-                const role = String(element.getAttribute?.('role') || '').toLowerCase();
-                const ariaModal = String(element.getAttribute?.('aria-modal') || '').toLowerCase();
-                const tag = String(element.tagName || '').toLowerCase();
-                const namedText = `${element.id || ''} ${element.className || ''} ${elementLabel(element).slice(0, 140)}`.toLowerCase();
-                const cookieLike = /cookie|consent|privacy|gdpr|onetrust/.test(namedText);
-                const fixedLike = style.position === 'fixed' || style.position === 'sticky';
-                const modalLike = role === 'dialog' || ariaModal === 'true' || tag === 'dialog';
-                const largeFixed = fixedLike && (areaRatio >= 0.16 || (rect.width >= viewportWidth * 0.85 && rect.height >= 90));
-                const highLayer = zIndex >= 1000 && fixedLike;
-
-                return modalLike || cookieLike || largeFixed || highLayer;
-            };
-
-            const candidates = new Set<any>();
-            const seededSelectors = '[role="dialog"], [aria-modal="true"], dialog[open], [id*="modal"], [class*="modal"], [id*="overlay"], [class*="overlay"], [id*="cookie"], [class*="cookie"], [id*="consent"], [class*="consent"], [id*="onetrust"], [class*="onetrust"]';
-            for (const element of toArray(doc.querySelectorAll(seededSelectors))) {
-                if (isLikelyOverlay(element)) {
-                    candidates.add(element);
-                }
-            }
-
-            const samplePoints: Array<[number, number]> = [
-                [Math.round(viewportWidth / 2), Math.round(viewportHeight / 2)],
-                [Math.round(viewportWidth / 2), Math.round(Math.min(96, viewportHeight / 3))],
-                [Math.round(viewportWidth / 2), Math.round(Math.max(16, viewportHeight - 96))]
-            ];
-
-            for (const [x, y] of samplePoints) {
-                if (typeof doc.elementsFromPoint !== 'function') continue;
-                const stack = toArray(doc.elementsFromPoint(x, y));
-                for (const element of stack) {
-                    let current = element;
-                    for (let depth = 0; current && depth < 5; depth += 1) {
-                        if (isLikelyOverlay(current)) {
-                            candidates.add(current);
-                        }
-                        current = current.parentElement;
-                    }
-                }
-            }
-
-            const overlayRoots = toArray(candidates).sort((left, right) => {
-                const leftRect = left.getBoundingClientRect();
-                const rightRect = right.getBoundingClientRect();
-                return (rightRect.width * rightRect.height) - (leftRect.width * leftRect.height);
-            });
-
-            const dedupedRoots: any[] = [];
-            for (const root of overlayRoots) {
-                if (dedupedRoots.some((existing) => existing === root || existing.contains(root))) {
-                    continue;
-                }
-                for (let index = dedupedRoots.length - 1; index >= 0; index -= 1) {
-                    if (root.contains(dedupedRoots[index])) {
-                        dedupedRoots.splice(index, 1);
-                    }
-                }
-                dedupedRoots.push(root);
-                if (dedupedRoots.length >= 3) break;
-            }
-
-            const closePattern = /(close|dismiss|accept|agree|allow|ok|got it|continue|reject|decline|no thanks|understand|x|×|✕)/i;
-
-            const hints: RawOverlayHint[] = dedupedRoots.map((root, index) => {
-                const rect = root.getBoundingClientRect();
-                const areaRatio = Math.min(1, (rect.width * rect.height) / viewportArea);
-                const role = String(root.getAttribute?.('role') || '').toLowerCase();
-                const ariaModal = String(root.getAttribute?.('aria-modal') || '').toLowerCase();
-                const text = elementLabel(root).toLowerCase();
-                const classAndId = `${root.id || ''} ${root.className || ''}`.toLowerCase();
-                const cookieLike = /cookie|consent|privacy|gdpr|onetrust/.test(`${text} ${classAndId}`);
-                const kind = cookieLike ? 'cookie-banner' : (role === 'dialog' || ariaModal === 'true' ? 'dialog' : 'overlay');
-                const confidence = areaRatio >= 0.45 || kind === 'dialog'
-                    ? 'high'
-                    : areaRatio >= 0.2 || kind === 'cookie-banner'
-                        ? 'medium'
-                        : 'low';
-                const areaPercent = Math.max(1, Math.round(areaRatio * 100));
-
-                const reason = kind === 'cookie-banner'
-                    ? `Possible cookie/consent banner covering ${areaPercent}% of the viewport.`
-                    : `Possible blocking ${kind} covering ${areaPercent}% of the viewport.`;
-
-                const closeActions: RawOverlayHint['closeActions'] = [];
-                const seenSelectors = new Set<string>();
-                const closeCandidates = toArray(root.querySelectorAll('button, [role="button"], a, input[type="button"], input[type="submit"]'));
-
-                for (const candidate of closeCandidates) {
-                    if (!isVisible(candidate)) continue;
-
-                    const label = elementLabel(candidate).slice(0, 80);
-                    const normalizedLabel = label.toLowerCase();
-                    const candidateMeta = `${candidate.id || ''} ${candidate.className || ''}`.toLowerCase();
-                    const closeLike = closePattern.test(normalizedLabel) || /close|dismiss|consent|cookie|onetrust/.test(candidateMeta);
-                    if (!closeLike) continue;
-
-                    const selector = buildSelector(candidate);
-                    if (!selector || seenSelectors.has(selector)) continue;
-                    seenSelectors.add(selector);
-
-                    closeActions.push({
-                        label: label || 'Close overlay',
-                        selector,
-                        confidence: /close|dismiss|reject/.test(normalizedLabel) ? 'high' : 'medium'
-                    });
-                    if (closeActions.length >= 5) break;
-                }
-
-                return {
-                    id: `overlay-${index + 1}`,
-                    kind,
-                    reason,
-                    confidence,
-                    closeActions,
-                    htmlSnippet: trimText(root.outerHTML).slice(0, 900)
+                    const byPath = parts.join(' > ');
+                    if (uniqueSelector(byPath)) return byPath;
+                    return '';
                 };
+
+                const elementLabel = (element: any): string => {
+                    if (!element) return '';
+                    if (element.tagName?.toLowerCase() === 'input') {
+                        const inputLabel = trimText(element.value);
+                        if (inputLabel) return inputLabel;
+                    }
+                    return trimText(
+                        element.getAttribute?.('aria-label')
+                        || element.getAttribute?.('title')
+                        || element.textContent
+                        || ''
+                    );
+                };
+
+                const isLikelyOverlay = (element: any): boolean => {
+                    if (!isVisible(element)) return false;
+
+                    const style = runtime.getComputedStyle?.(element);
+                    if (!style) return false;
+
+                    const rect = element.getBoundingClientRect();
+                    const areaRatio = (rect.width * rect.height) / viewportArea;
+                    const zIndex = Number.parseInt(style.zIndex || '0', 10);
+                    const role = String(element.getAttribute?.('role') || '').toLowerCase();
+                    const ariaModal = String(element.getAttribute?.('aria-modal') || '').toLowerCase();
+                    const tag = String(element.tagName || '').toLowerCase();
+                    const namedText = `${element.id || ''} ${element.className || ''} ${elementLabel(element).slice(0, 140)}`.toLowerCase();
+                    const cookieLike = /cookie|consent|privacy|gdpr|onetrust/.test(namedText);
+                    const fixedLike = style.position === 'fixed' || style.position === 'sticky';
+                    const modalLike = role === 'dialog' || ariaModal === 'true' || tag === 'dialog';
+                    const largeFixed = fixedLike && (areaRatio >= 0.16 || (rect.width >= viewportWidth * 0.85 && rect.height >= 90));
+                    const highLayer = zIndex >= 1000 && fixedLike;
+
+                    // Support subframes by being more lenient if they are effectively full-screen within their frame
+                    const isFullScreenInFrame = rect.width >= viewportWidth * 0.95 && rect.height >= viewportHeight * 0.95;
+
+                    return modalLike || cookieLike || largeFixed || highLayer || isFullScreenInFrame;
+                };
+
+                const candidates = new Set<any>();
+                const seededSelectors = '[role="dialog"], [aria-modal="true"], dialog[open], [id*="modal"], [class*="modal"], [id*="overlay"], [class*="overlay"], [id*="cookie"], [class*="cookie"], [id*="consent"], [class*="consent"], [id*="onetrust"], [class*="onetrust"]';
+                for (const element of toArray(doc.querySelectorAll(seededSelectors))) {
+                    if (isLikelyOverlay(element)) {
+                        candidates.add(element);
+                    }
+                }
+
+                const samplePoints: Array<[number, number]> = [
+                    [Math.round(viewportWidth / 2), Math.round(viewportHeight / 2)],
+                    [Math.round(viewportWidth / 2), Math.round(Math.min(96, viewportHeight / 3))],
+                    [Math.round(viewportWidth / 2), Math.round(Math.max(16, viewportHeight - 96))]
+                ];
+
+                for (const [x, y] of samplePoints) {
+                    if (typeof doc.elementsFromPoint !== 'function') continue;
+                    const stack = toArray(doc.elementsFromPoint(x, y));
+                    for (const element of stack) {
+                        let current = element;
+                        for (let depth = 0; current && depth < 5; depth += 1) {
+                            if (isLikelyOverlay(current)) {
+                                candidates.add(current);
+                            }
+                            current = current.parentElement;
+                        }
+                    }
+                }
+
+                const overlayRoots = toArray(candidates).sort((left, right) => {
+                    const leftRect = left.getBoundingClientRect();
+                    const rightRect = right.getBoundingClientRect();
+                    return (rightRect.width * rightRect.height) - (leftRect.width * leftRect.height);
+                });
+
+                const dedupedRoots: any[] = [];
+                for (const root of overlayRoots) {
+                    if (dedupedRoots.some((existing) => existing === root || existing.contains(root))) {
+                        continue;
+                    }
+                    for (let index = dedupedRoots.length - 1; index >= 0; index -= 1) {
+                        if (root.contains(dedupedRoots[index])) {
+                            dedupedRoots.splice(index, 1);
+                        }
+                    }
+                    dedupedRoots.push(root);
+                    if (dedupedRoots.length >= 3) break;
+                }
+
+                const closePattern = /(close|dismiss|accept|agree|allow|ok|got it|continue|reject|decline|no thanks|understand|x|×|✕)/i;
+
+                const hints: RawOverlayHint[] = dedupedRoots.map((root, index) => {
+                    const rect = root.getBoundingClientRect();
+                    const areaRatio = Math.min(1, (rect.width * rect.height) / viewportArea);
+                    const role = String(root.getAttribute?.('role') || '').toLowerCase();
+                    const ariaModal = String(root.getAttribute?.('aria-modal') || '').toLowerCase();
+                    const text = elementLabel(root).toLowerCase();
+                    const classAndId = `${root.id || ''} ${root.className || ''}`.toLowerCase();
+                    const cookieLike = /cookie|consent|privacy|gdpr|onetrust/.test(`${text} ${classAndId}`);
+                    const kind = cookieLike ? 'cookie-banner' : (role === 'dialog' || ariaModal === 'true' ? 'dialog' : 'overlay');
+                    const confidence = areaRatio >= 0.45 || kind === 'dialog'
+                        ? 'high'
+                        : areaRatio >= 0.2 || kind === 'cookie-banner'
+                            ? 'medium'
+                            : 'low';
+                    const areaPercent = Math.max(1, Math.round(areaRatio * 100));
+
+                    const reason = kind === 'cookie-banner'
+                        ? `Possible cookie/consent banner covering ${areaPercent}% of the viewport.`
+                        : `Possible blocking ${kind} covering ${areaPercent}% of the viewport.`;
+
+                    const closeActions: RawOverlayHint['closeActions'] = [];
+                    const seenSelectors = new Set<string>();
+                    const closeCandidates = toArray(root.querySelectorAll('button, [role="button"], a, input[type="button"], input[type="submit"]'));
+
+                    for (const candidate of closeCandidates) {
+                        if (!isVisible(candidate)) continue;
+
+                        const label = elementLabel(candidate).slice(0, 80);
+                        const normalizedLabel = label.toLowerCase();
+                        const candidateMeta = `${candidate.id || ''} ${candidate.className || ''}`.toLowerCase();
+                        const closeLike = closePattern.test(normalizedLabel) || /close|dismiss|consent|cookie|onetrust/.test(candidateMeta);
+                        if (!closeLike) continue;
+
+                        const selector = buildSelector(candidate);
+                        if (!selector || seenSelectors.has(selector)) continue;
+                        seenSelectors.add(selector);
+
+                        closeActions.push({
+                            label: label || 'Close overlay',
+                            selector,
+                            confidence: /close|dismiss|reject/.test(normalizedLabel) ? 'high' : 'medium'
+                        });
+                        if (closeActions.length >= 5) break;
+                    }
+
+                    return {
+                        id: `overlay-${index + 1}`,
+                        kind,
+                        reason,
+                        confidence,
+                        closeActions,
+                        htmlSnippet: trimText(root.outerHTML).slice(0, 900)
+                    };
+                });
+
+                return hints;
             });
 
-            return hints;
-        });
-
-        return rawHints
-            .map((hint): OverlayHint => ({
-                id: hint.id || `overlay-${Math.random().toString(36).slice(2, 8)}`,
-                kind: normalizeOverlayKind(hint.kind || 'overlay'),
-                reason: hint.reason || 'Possible blocking overlay detected.',
-                confidence: normalizeOverlayConfidence(hint.confidence || 'medium'),
-                closeActions: Array.isArray(hint.closeActions)
-                    ? hint.closeActions
-                        .filter((candidate) => candidate && typeof candidate.selector === 'string' && candidate.selector.trim().length > 0)
-                        .map((candidate) => ({
-                            label: candidate.label || 'Close overlay',
-                            selector: candidate.selector,
-                            confidence: normalizeOverlayConfidence(candidate.confidence || 'medium')
-                        }))
-                    : [],
-                htmlSnippet: typeof hint.htmlSnippet === 'string' ? hint.htmlSnippet : undefined
-            }))
-            .slice(0, 3);
-    } catch {
-        return [];
+            const frameHints = rawHints
+                .map((hint): OverlayHint => ({
+                    id: hint.id || `overlay-${Math.random().toString(36).slice(2, 8)}`,
+                    kind: normalizeOverlayKind(hint.kind || 'overlay'),
+                    reason: hint.reason || 'Possible blocking overlay detected.',
+                    confidence: normalizeOverlayConfidence(hint.confidence || 'medium'),
+                    closeActions: Array.isArray(hint.closeActions)
+                        ? hint.closeActions
+                            .filter((candidate) => candidate && typeof candidate.selector === 'string' && candidate.selector.trim().length > 0)
+                            .map((candidate) => ({
+                                label: candidate.label || 'Close overlay',
+                                selector: candidate.selector,
+                                confidence: normalizeOverlayConfidence(candidate.confidence || 'medium')
+                            }))
+                        : [],
+                    htmlSnippet: typeof hint.htmlSnippet === 'string' ? hint.htmlSnippet : undefined
+                }));
+            
+            allHints.push(...frameHints);
+        } catch {
+            // Ignore errors in specific frames
+        }
     }
+
+    // Deduplicate and return top 3
+    return allHints
+        .sort((a, b) => {
+            const confOrder = { high: 0, medium: 1, low: 2 };
+            return confOrder[a.confidence] - confOrder[b.confidence];
+        })
+        .slice(0, 3);
 }
 
 async function getPageDomSnippet(session: SnapshotSession): Promise<string | undefined> {
@@ -840,6 +846,14 @@ async function tryDismissBlockingOverlay(session: SnapshotSession, commandId: st
     // Common fallback selectors for cookie/modals in case no explicit close button was detected.
     selectors.add('#onetrust-accept-btn-handler');
     selectors.add('#onetrust-reject-all-handler');
+    selectors.add('button.fc-primary-button');
+    selectors.add('button.fc-cta-consent');
+    selectors.add('button:has-text("Accept All")');
+    selectors.add('button:has-text("Accept")');
+    selectors.add('button:has-text("Allow All")');
+    selectors.add('button:has-text("I Accept")');
+    selectors.add('button:has-text("Agree")');
+    selectors.add('button:has-text("I Agree")');
     selectors.add('button[aria-label="Close"]');
     selectors.add('button[title="Close"]');
 
@@ -851,16 +865,43 @@ async function tryDismissBlockingOverlay(session: SnapshotSession, commandId: st
     for (const selector of selectors) {
         if (attemptNumber > maxAttempts) break;
 
+        let clicked = false;
+        
+        // Try main frame first
         try {
             await page.locator(selector).first().click({
-                timeout: OVERLAY_DISMISS_TIMEOUT_MS,
+                timeout: OVERLAY_FRAME_SEARCH_TIMEOUT_MS,
                 force: true
             });
-            if (!clickedSelectors.includes(selector)) {
-                clickedSelectors.push(selector);
-            }
-            attemptNumber += 1;
+            clicked = true;
         } catch {
+            // Ignore main frame fail and try subframes
+        }
+
+        // Try all frames if not clicked yet
+        if (!clicked) {
+            for (const frame of page.frames()) {
+                if (frame === page.mainFrame()) continue;
+                try {
+                    const loc = frame.locator(selector).first();
+                    if (await loc.count() > 0) {
+                        await loc.click({
+                            timeout: OVERLAY_FRAME_SEARCH_TIMEOUT_MS,
+                            force: true
+                        });
+                        clicked = true;
+                        break;
+                    }
+                } catch {
+                    // Ignore subframe fail
+                }
+            }
+        }
+
+        if (clicked && !clickedSelectors.includes(selector)) {
+            clickedSelectors.push(selector);
+            attemptNumber += 1;
+        } else if (!clicked) {
             attemptNumber += 1;
         }
     }
@@ -882,7 +923,67 @@ async function executeSessionCommand(session: SnapshotSession, command: McpComma
     applyWaitForParams(command, params);
 
     const executeStart = performance.now();
-    let result: Response = await executeCommand(mapped.protocolCommand, session.browser);
+    let result: Response;
+    
+    // Check if this click is targeting an active overlay hint
+    const isOverlayHintClick = mapped.action === 'click' && 
+                               session.overlayHints.some(h => h.closeActions.some(a => a.selector === mapped.selector));
+
+    if (isOverlayHintClick) {
+        try {
+            const page = session.browser.getPage();
+            let clicked = false;
+            
+            // Try main frame first
+            try {
+                await page.locator(mapped.selector).first().click({
+                    timeout: OVERLAY_FRAME_SEARCH_TIMEOUT_MS,
+                    force: true
+                });
+                clicked = true;
+            } catch {
+                // Ignore main frame fail and try subframes
+            }
+            
+            // Try all frames if not clicked yet
+            if (!clicked) {
+                for (const frame of page.frames()) {
+                    if (frame === page.mainFrame()) continue;
+                    try {
+                        const loc = frame.locator(mapped.selector).first();
+                        if (await loc.count() > 0) {
+                            await loc.click({
+                                timeout: OVERLAY_FRAME_SEARCH_TIMEOUT_MS,
+                                force: true
+                            });
+                            clicked = true;
+                            break;
+                        }
+                    } catch {
+                        // Ignore subframe fail
+                    }
+                }
+            }
+
+            if (!clicked) {
+                // Final fallback with full timeout
+                await page.locator(mapped.selector).first().click({
+                    timeout: OVERLAY_DISMISS_TIMEOUT_MS,
+                    force: true
+                });
+                clicked = true;
+            }
+
+            // Give it a tiny moment to process
+            await session.browser.getPage().waitForTimeout(150).catch(() => undefined);
+            result = { success: true, id: mapped.commandId, data: { clicked: true, forced: true } } as Response;
+        } catch (error) {
+            result = { success: false, id: mapped.commandId, error: error instanceof Error ? error.message : String(error) } as Response;
+        }
+    } else {
+        result = await executeCommand(mapped.protocolCommand, session.browser);
+    }
+    
     markTiming(timing, 'execute_command', executeStart);
     let retriedAfterSnapshot = false;
 
