@@ -19,6 +19,7 @@ type SnapshotTabsController = {
     goForward: () => void;
     reloadCurrent: () => void;
     executeMcpCommand: (command: McpCommand) => Promise<void>;
+    applySnapshotResponse: (response: SnapshotResponse) => void;
 };
 
 const AUTO_REFRESH_INTERVAL_MS = 3000;
@@ -371,6 +372,30 @@ export function useSnapshotTabs(): SnapshotTabsController {
         await executeMcpCommandForTab(tab.id, command);
     }, [executeMcpCommandForTab]);
 
+    const applySnapshotResponse = React.useCallback((response: SnapshotResponse): void => {
+        const tabId = activeTabIdRef.current;
+        if (tabId === null) return;
+
+        setTabs((previousTabs) => previousTabs.map((candidate) => {
+            if (candidate.id !== tabId) return candidate;
+
+            const previousEntry = getCurrentEntry(candidate);
+            const previousUrl = getEntryUrl(previousEntry);
+            const nextUrl = getEntryUrl(response);
+            const mode: LoadMode = previousUrl && nextUrl && previousUrl !== nextUrl ? 'navigate' : 'refresh';
+
+            const completedTab: Tab = {
+                ...candidate,
+                requestToken: candidate.requestToken + 1,
+                loading: false,
+                refreshing: false,
+                commandHistory: response.commandHistory
+            };
+
+            return upsertHistoryEntry(completedTab, response, mode);
+        }));
+    }, []);
+
     return {
         tabs,
         activeTab,
@@ -384,6 +409,7 @@ export function useSnapshotTabs(): SnapshotTabsController {
         goBack,
         goForward,
         reloadCurrent,
-        executeMcpCommand
+        executeMcpCommand,
+        applySnapshotResponse
     };
 }

@@ -14,3 +14,9 @@ contextBridge.exposeInMainWorld('snapshotApi', {
         return ipcRenderer.invoke('snapshot:execute-mcp', request);
     }
 });
+
+contextBridge.exposeInMainWorld('agentChatApi', {
+    sendMessage(request) {
+        return ipcRenderer.invoke('agent-chat:send', request);
+    }
+});

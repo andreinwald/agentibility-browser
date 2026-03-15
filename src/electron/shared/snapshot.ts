@@ -51,6 +51,26 @@ export type McpCommand =
         action: 'focus';
         selector: string;
         waitFor?: WaitForCommand;
+    }
+    | {
+        action: 'type';
+        selector: string;
+        text: string;
+        clear?: boolean;
+        delay?: number;
+        waitFor?: WaitForCommand;
+    }
+    | {
+        action: 'fill';
+        selector: string;
+        value: string;
+        waitFor?: WaitForCommand;
+    }
+    | {
+        action: 'press';
+        key: string;
+        selector?: string;
+        waitFor?: WaitForCommand;
     };
 
 export type CommandHistoryEntry = {

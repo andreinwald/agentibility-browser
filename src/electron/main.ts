@@ -1,5 +1,6 @@
 import { app, BrowserWindow } from 'electron';
 import path from 'node:path';
+import { registerAgentChatIpcHandlers } from './main/ipc/registerAgentChatIpc.js';
 import { registerSnapshotIpcHandlers } from './main/ipc/registerSnapshotIpc.js';
 import { closeAllSnapshotSessions } from './main/services/SnapshotService.js';
 
@@ -34,6 +35,7 @@ function createWindow(): BrowserWindow {
 
 app.whenReady().then(() => {
     registerSnapshotIpcHandlers();
+    registerAgentChatIpcHandlers();
 
     createWindow();
 

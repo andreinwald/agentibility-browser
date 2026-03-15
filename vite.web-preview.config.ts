@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig, type Connect, type Plugin } from 'vite';
+import type { AgentChatHistoryMessage, AgentChatRequest } from './src/electron/shared/agentChat.js';
 import type { ExecuteMcpRequest, LoadSnapshotRequest, McpCommand } from './src/electron/shared/snapshot.js';
 import {
     closeAllSnapshotSessions,
@@ -10,6 +11,7 @@ import {
     loadSnapshot,
     refreshSnapshot
 } from './src/electron/main/services/SnapshotService.js';
+import { runAgentChat } from './src/electron/main/services/AgentChatService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -91,6 +93,41 @@ function parseExecuteMcpRequest(payload: unknown): ExecuteMcpRequest {
     };
 }
 
+function parseAgentChatHistory(payload: unknown): AgentChatHistoryMessage[] | undefined {
+    if (!Array.isArray(payload)) return undefined;
+
+    const history: AgentChatHistoryMessage[] = [];
+    for (const entry of payload) {
+        if (!entry || typeof entry !== 'object') continue;
+        const raw = entry as Record<string, unknown>;
+        const role = raw.role === 'user' || raw.role === 'assistant' ? raw.role : null;
+        const content = typeof raw.content === 'string' ? raw.content : '';
+        if (!role || !content.trim()) continue;
+        history.push({ role, content });
+        if (history.length >= 64) break;
+    }
+    return history;
+}
+
+function parseAgentChatRequest(payload: unknown): AgentChatRequest {
+    if (!payload || typeof payload !== 'object') {
+        return {
+            sessionId: '',
+            prompt: ''
+        };
+    }
+
+    const raw = payload as Record<string, unknown>;
+    return {
+        sessionId: typeof raw.sessionId === 'string' ? raw.sessionId : '',
+        prompt: typeof raw.prompt === 'string' ? raw.prompt : '',
+        history: parseAgentChatHistory(raw.history),
+        apiBaseUrl: typeof raw.apiBaseUrl === 'string' ? raw.apiBaseUrl : undefined,
+        apiKey: typeof raw.apiKey === 'string' ? raw.apiKey : undefined,
+        model: typeof raw.model === 'string' ? raw.model : undefined
+    };
+}
+
 async function readJsonBody(request: IncomingMessage): Promise<unknown> {
     const chunks: Buffer[] = [];
     for await (const chunk of request) {
@@ -136,6 +173,13 @@ function snapshotApiPlugin(): Plugin {
             }
 
             try {
+                if (method === 'POST' && pathname === '/api/agent-chat/send') {
+                    const payload = await readJsonBody(request);
+                    const data = await runAgentChat(parseAgentChatRequest(payload));
+                    respondJson(response, 200, data);
+                    return;
+                }
+
                 if (method === 'POST' && pathname === '/api/snapshot/load') {
                     const payload = await readJsonBody(request);
                     const data = await loadSnapshot(parseLoadRequest(payload));

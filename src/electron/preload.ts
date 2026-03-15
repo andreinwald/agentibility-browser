@@ -1,3 +1,4 @@
+import type { AgentChatApi, AgentChatRequest, AgentChatResponse } from './shared/agentChat.js';
 import type { ExecuteMcpRequest, SnapshotApi } from './shared/snapshot.js';
 import { contextBridge, ipcRenderer } from 'electron';
 
@@ -17,3 +18,11 @@ const snapshotApi: SnapshotApi = {
 };
 
 contextBridge.exposeInMainWorld('snapshotApi', snapshotApi);
+
+const agentChatApi: AgentChatApi = {
+    sendMessage: (request: AgentChatRequest): Promise<AgentChatResponse> => {
+        return ipcRenderer.invoke('agent-chat:send', request);
+    }
+};
+
+contextBridge.exposeInMainWorld('agentChatApi', agentChatApi);

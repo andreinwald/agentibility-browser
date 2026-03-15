@@ -116,6 +116,37 @@ function parseMcpCommand(payload: unknown): McpCommand {
         };
     }
 
+    if (action === 'type') {
+        const delay = typeof rawPayload.delay === 'number' && Number.isFinite(rawPayload.delay) ? rawPayload.delay : undefined;
+        return {
+            action: 'type',
+            selector: typeof rawPayload.selector === 'string' ? rawPayload.selector : '',
+            text: typeof rawPayload.text === 'string' ? rawPayload.text : '',
+            clear: Boolean(rawPayload.clear),
+            ...(delay ? { delay } : {}),
+            waitFor: parseWaitFor(rawPayload.waitFor)
+        };
+    }
+
+    if (action === 'fill') {
+        return {
+            action: 'fill',
+            selector: typeof rawPayload.selector === 'string' ? rawPayload.selector : '',
+            value: typeof rawPayload.value === 'string' ? rawPayload.value : '',
+            waitFor: parseWaitFor(rawPayload.waitFor)
+        };
+    }
+
+    if (action === 'press') {
+        const selector = typeof rawPayload.selector === 'string' ? rawPayload.selector : '';
+        return {
+            action: 'press',
+            key: typeof rawPayload.key === 'string' ? rawPayload.key : '',
+            ...(selector ? { selector } : {}),
+            waitFor: parseWaitFor(rawPayload.waitFor)
+        };
+    }
+
     if (action === 'dblclick') {
         return {
             action: 'dblclick',

@@ -313,6 +313,12 @@ function toCommandLine(command: McpCommand): string {
             return `agent-browser dblclick ${command.selector}`;
         case 'focus':
             return `agent-browser focus ${command.selector}`;
+        case 'type':
+            return `agent-browser type ${command.selector} [${command.text.length} chars]`;
+        case 'fill':
+            return `agent-browser fill ${command.selector} [${command.value.length} chars]`;
+        case 'press':
+            return `agent-browser press ${command.key}${command.selector ? ` ${command.selector}` : ''}`;
     }
 }
 
@@ -335,6 +341,23 @@ function toHistoryParams(command: McpCommand): Record<string, string | boolean> 
         case 'focus':
             return {
                 selector: command.selector
+            };
+        case 'type':
+            return {
+                selector: command.selector,
+                textLength: String(command.text.length),
+                ...(command.clear ? { clear: true } : {}),
+                ...(typeof command.delay === 'number' && Number.isFinite(command.delay) ? { delay: String(command.delay) } : {})
+            };
+        case 'fill':
+            return {
+                selector: command.selector,
+                valueLength: String(command.value.length)
+            };
+        case 'press':
+            return {
+                key: command.key,
+                ...(command.selector ? { selector: command.selector } : {})
             };
     }
 }
@@ -463,6 +486,56 @@ function toAgentBrowserCommand(session: SnapshotSession, command: McpCommand): M
                 }
             };
         }
+        case 'type': {
+            const selector = normalizeSelector(command.selector);
+            const delay = typeof command.delay === 'number' && Number.isFinite(command.delay) ? command.delay : undefined;
+            return {
+                ...command,
+                selector,
+                commandId,
+                protocolCommand: {
+                    id: commandId,
+                    action: 'type',
+                    selector,
+                    text: command.text,
+                    ...(command.clear ? { clear: true } : {}),
+                    ...(typeof delay === 'number' ? { delay } : {})
+                }
+            };
+        }
+        case 'fill': {
+            const selector = normalizeSelector(command.selector);
+            return {
+                ...command,
+                selector,
+                commandId,
+                protocolCommand: {
+                    id: commandId,
+                    action: 'fill',
+                    selector,
+                    value: command.value
+                }
+            };
+        }
+        case 'press': {
+            const key = String(command.key || '').trim();
+            if (!key) {
+                throw new Error('Missing key.');
+            }
+            const selector = command.selector ? normalizeSelector(command.selector) : undefined;
+            return {
+                ...command,
+                key,
+                ...(selector ? { selector } : {}),
+                commandId,
+                protocolCommand: {
+                    id: commandId,
+                    action: 'press',
+                    key,
+                    ...(selector ? { selector } : {})
+                }
+            };
+        }
     }
 }
 
@@ -491,6 +564,11 @@ function shouldRetryCommandAfterSnapshotRefresh(command: McpCommand, errorMessag
         case 'dblclick':
         case 'focus':
             return isRefSelector(command.selector) && isStaleRefError(errorMessage);
+        case 'type':
+        case 'fill':
+            return isRefSelector(command.selector) && isStaleRefError(errorMessage);
+        case 'press':
+            return typeof command.selector === 'string' && isRefSelector(command.selector) && isStaleRefError(errorMessage);
         default:
             return false;
     }
@@ -527,6 +605,8 @@ function shouldInspectOverlayForCommand(command: McpCommand, errorMessage?: stri
         case 'click':
         case 'dblclick':
         case 'focus':
+        case 'type':
+        case 'fill':
             return true;
         default:
             return false;

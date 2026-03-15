@@ -1,10 +1,12 @@
 import { App } from './App.js';
+import { ensureAgentChatApiBridge } from './lib/browserAgentChatApi.js';
 import { ensureSnapshotApiBridge } from './lib/browserSnapshotApi.js';
 
 declare const React: typeof import('react');
 declare const ReactDOM: typeof import('react-dom/client');
 
 ensureSnapshotApiBridge();
+ensureAgentChatApiBridge();
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
